@@ -4,7 +4,7 @@
     "publishedfileid" "0"
     "contentfolder" "${CONTENT_PATH}"
     "previewfile" "${PREVIEW_IMG}"
-    "visibility" "0"
+    "visibility" "2"
     "title" "Platform Efficiency Overlay"
     "description" "Shows measured throughput and bottlenecks for every machine, belt and platform"
 }

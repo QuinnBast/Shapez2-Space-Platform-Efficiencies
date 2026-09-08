@@ -66,3 +66,4 @@ Set `SPZ2_PATH`, `SPZ2_PERSISTENT` and `SPZ2_SHIFTER` — running the game once 
 to the mods folder. Restart the game to pick up changes.
 
 Built on [Shapez Shifter](https://github.com/tobspr-games/shapez2-shifter) by tobspr Games.
+Licensed under [Apache 2.0](LICENSE).
