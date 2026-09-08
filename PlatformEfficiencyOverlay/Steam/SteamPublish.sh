@@ -63,6 +63,19 @@ fi
 
 echo "STEAMCMD: $STEAMCMD_BIN"
 
+# steamcmd can only ask for a password when it owns the terminal. Run from MSBuild - which
+# captures stdin - the prompt reads EOF, it submits an empty password, and the login fails
+# with "Invalid Password" without ever pausing. Logging in once by hand caches the session
+# and every later run is non-interactive.
+if [ ! -f "$(dirname "$STEAMCMD_BIN")/config/config.vdf" ]    || ! grep -qi "ConnectCache\|WebToken" "$(dirname "$STEAMCMD_BIN")/config/config.vdf" 2>/dev/null; then
+  echo
+  echo "note: steamcmd has no cached login. If this fails with 'Invalid Password' without"
+  echo "      prompting, run this once in a normal terminal window and then retry:"
+  echo
+  echo "          \"$STEAMCMD_BIN\" +login \"$STEAM_LOGIN\" +quit"
+  echo
+fi
+
 # Set STEAM_LOGIN to your own Steam account name before publishing. The sample this was
 # copied from hard-coded a tobspr developer account.
 "$STEAMCMD_BIN" +login "${STEAM_LOGIN:?set STEAM_LOGIN to your Steam account name}" +workshop_build_item "$TMP_VDF" +quit;
