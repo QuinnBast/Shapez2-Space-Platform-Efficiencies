@@ -28,10 +28,44 @@ cat Steam\\base.tmp.vdf
 
 TMP_VDF=$CURRENT_DIR\\Steam\\base.tmp.vdf
 
-# Execute
+# Find steamcmd. It is usually not on PATH, and it has to live somewhere writable
+# because it self-updates into its own folder - which rules out Program Files.
+find_steamcmd() {
+  if [ -n "${STEAMCMD:-}" ] && [ -x "$STEAMCMD" ]; then
+    printf '%s' "$STEAMCMD"
+    return 0
+  fi
+
+  if command -v steamcmd >/dev/null 2>&1; then
+    command -v steamcmd
+    return 0
+  fi
+
+  for candidate in     "$HOME/steamcmd/steamcmd.exe"     "C:/steamcmd/steamcmd.exe"     "${PROGRAMFILES:-C:/Program Files}/SteamCMD/steamcmd.exe"     "${LOCALAPPDATA:-}/SteamCMD/steamcmd.exe"
+  do
+    if [ -x "$candidate" ]; then
+      printf '%s' "$candidate"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+STEAMCMD_BIN=$(find_steamcmd || true)
+
+if [ -z "$STEAMCMD_BIN" ]; then
+  echo "error: steamcmd not found. Install it somewhere writable (not Program Files -" >&2
+  echo "       it self-updates into its own folder) and either put it on PATH or set" >&2
+  echo "       STEAMCMD to the full path of steamcmd.exe." >&2
+  exit 1
+fi
+
+echo "STEAMCMD: $STEAMCMD_BIN"
+
 # Set STEAM_LOGIN to your own Steam account name before publishing. The sample this was
 # copied from hard-coded a tobspr developer account.
-steamcmd +login "${STEAM_LOGIN:?set STEAM_LOGIN to your Steam account name}" +workshop_build_item "$TMP_VDF" +quit;
+"$STEAMCMD_BIN" +login "${STEAM_LOGIN:?set STEAM_LOGIN to your Steam account name}" +workshop_build_item "$TMP_VDF" +quit;
 
 # Copy published file id back
 cat Steam\\base.tmp.vdf
