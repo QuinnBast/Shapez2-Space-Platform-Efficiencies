@@ -1,0 +1,26 @@
+{
+  "Version": "1.0.0",
+  "Title": "Platform Efficiency Overlay",
+  "Description": "Shows measured throughput and bottlenecks for every machine, belt and platform",
+  "Author": "Quinn Bast",
+  "SavedModVersionCompabilityRangeWithSelf": "<1.1.0",
+  "GameVersionSupportRange": "*",
+  "AffectsSaveGames": false,
+  "DisablesAchievements": false,
+  "Conflicts": [],
+  "Assemblies": [
+    "PlatformEfficiencyOverlay.dll"
+  ],
+  "Dependencies": [
+    {
+      "ModId": "steam:3542611357",
+      "ModTitle": "Shapez Shifter",
+      "Version": "^1.2.0"
+    },
+    {
+      "ModId": "steam:3542712030",
+      "ModTitle": "MonoMod.RuntimeDetour",
+      "Version": "^25.2.3"
+    }
+  ]
+}

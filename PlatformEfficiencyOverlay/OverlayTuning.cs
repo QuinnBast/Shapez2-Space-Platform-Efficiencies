@@ -1,0 +1,89 @@
+/// <summary>
+/// The handful of numbers that can only really be judged with the game in front of you.
+/// They live here rather than as constants so the debug console can change them at runtime -
+/// a new mod DLL cannot be loaded without restarting the game, so anything that needs
+/// eyeballing is worth making adjustable in place.
+/// </summary>
+public static class OverlayTuning
+{
+    /// Bumped whenever something changes that was baked into a cached mesh or position.
+    public static int Version { get; private set; }
+
+    /// <summary>Height above the platform floor for the colour wash.</summary>
+    public static float TintHeight = 1.1f;
+
+    /// <summary>Opacity of the colour wash at full fade-in.</summary>
+    public static float TintAlpha = 0.55f;
+
+    /// <summary>
+    /// Show a pip on anything whose supply is backed up, marking it as fed. A dark tile
+    /// with a pip is the constraint; a dark tile without one is starved from upstream.
+    /// </summary>
+    public static bool ShowSaturationPips = true;
+
+    /// <summary>How full the feeding lanes must be to count as backed up, 0 to 1.</summary>
+    public static float SaturationThreshold = 0.5f;
+
+    /// <summary>Brightness of the 0% end of the gradient. Lower is darker.</summary>
+    public static float BlockedShade = 0.42f;
+
+    /// <summary>
+    /// Measure at all. Turning this off unhooks every lane and forgets every flow, which
+    /// is the escape hatch if the mod is ever costing more than it is worth on a big save.
+    /// </summary>
+    public static bool TrackingEnabled = true;
+
+    /// <summary>
+    /// Draw the measured number on each machine. Off by default: the labels are drawn by
+    /// the UI renderer, which ignores depth, so they show through whatever is above them.
+    /// The colour wash carries the at-a-glance story and clicking a machine gives the
+    /// exact figures, which is the better trade.
+    /// </summary>
+    public static bool ShowMachineLabels;
+
+    /// <summary>
+    /// Draw the rolled-up number on each platform in space view. Off for the same reason
+    /// as the machine labels: drawn by the UI renderer, so it shows through anything above
+    /// it, and the platform's side panel carries the same figure properly.
+    /// </summary>
+    public static bool ShowPlatformLabels;
+
+    /// <summary>Camera distance past which per-machine numbers stop being drawn.</summary>
+    public static float MachineLabelZoom = 80f;
+
+    /// <summary>Widest a per-machine number may get, in tiles.</summary>
+    public static float MachineLabelMaxWidth = 2.2f;
+
+    /// <summary>
+    /// Show per-machine numbers as a percentage of what the machine could do, rather than
+    /// as items per minute.
+    /// </summary>
+    public static bool LabelAsPercent = true;
+
+    public static void SetTintHeight(float value)
+    {
+        TintHeight = value;
+        Version++;
+    }
+
+    public static void SetBlockedShade(float value)
+    {
+        BlockedShade = value;
+        Version++;
+    }
+
+    public static string Describe()
+    {
+        return "tracking " + (TrackingEnabled ? "on" : "off")
+            + " | pips " + (ShowSaturationPips ? "on" : "off")
+            + " | saturation-threshold " + SaturationThreshold
+            + " | platform-labels " + (ShowPlatformLabels ? "on" : "off")
+            + " | machine-labels " + (ShowMachineLabels ? "on" : "off")
+            + " | tint-height " + TintHeight
+            + " | tint-alpha " + TintAlpha
+            + " | blocked-shade " + BlockedShade
+            + " | label-zoom " + MachineLabelZoom
+            + " | label-width " + MachineLabelMaxWidth
+            + " | labels " + (LabelAsPercent ? "percent" : "rate");
+    }
+}

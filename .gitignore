@@ -1,0 +1,14 @@
+# Build output
+bin/
+obj/
+
+# Publicizer log
+logs/
+
+# Steam publish scratch
+Steam/base.tmp.vdf
+
+# IDE
+.idea/
+.vs/
+*.user
