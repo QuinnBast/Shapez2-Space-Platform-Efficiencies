@@ -71,6 +71,11 @@ public class EfficiencyTracker : IDisposable
         /// This carries goods off the platform - a space belt port or a space pipe port.
         public bool IsOutputPort;
 
+        /// Items pass straight through rather than being transformed: belts, space belts,
+        /// space pipes, ports. Almost all of a large save is this, so it is the axis that
+        /// decides whether a per-flow feature is affordable.
+        public bool IsTransport;
+
         /// <summary>Reports every metered lane as one flow, for the side panel gauge.</summary>
         public AggregateLane EnsureAggregate()
         {
@@ -293,6 +298,37 @@ public class EfficiencyTracker : IDisposable
         MapAttached?.Invoke(map);
     }
 
+    /// <summary>
+    /// How the tracked flows split between things that move items and things that change
+    /// them. Anything costed per flow - history for graphs, for instance - is really costed
+    /// against the transport count, because that is nearly all of it.
+    /// </summary>
+    public string DescribeComposition()
+    {
+        int transport = 0;
+        int machines = 0;
+        int ports = 0;
+
+        foreach (Entry entry in Entries.Values)
+        {
+            if (entry.IsOutputPort)
+            {
+                ports++;
+            }
+            else if (entry.IsTransport)
+            {
+                transport++;
+            }
+            else
+            {
+                machines++;
+            }
+        }
+
+        return "  of those: " + machines + " machines, " + transport
+            + " belts and space paths, " + ports + " platform ports";
+    }
+
     /// <summary>Counts one fluid package leaving a space pipe port.</summary>
     public void OnFluidPackageLaunched(FluidPackageLaunchSimulation launch)
     {
@@ -339,6 +375,7 @@ public class EfficiencyTracker : IDisposable
 
         Logger?.Info?.Log("Tracking " + Entries.Count + " flows across " + Pending.Count
             + " simulations (" + RegistrationTimer.ElapsedMilliseconds + "ms)");
+        Logger?.Info?.Log(DescribeComposition());
 
         Pending = null;
         RegistrationTimer = null;
@@ -725,6 +762,7 @@ public class EfficiencyTracker : IDisposable
         // measuring a machine against lane speed would rate a perfectly busy machine at a
         // few percent of a belt it was never going to fill.
         bool transport = IsTransport(localized.Simulation, entry.MeteredLanes, entry.InputLanes);
+        entry.IsTransport = transport;
 
         float fromLanes = 0f;
         for (int i = 0; i < entry.MeteredLanes.Length; i++)

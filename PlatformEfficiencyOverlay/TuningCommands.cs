@@ -108,6 +108,9 @@ public class TuningCommands : IConsoleRewirer
             });
 
         Register(console, "inspect", null, Inspect);
+
+        Register(console, "breakdown", null, context =>
+            context.Output?.Invoke(Tracker.DescribeComposition()));
     }
 
     /// <summary>
