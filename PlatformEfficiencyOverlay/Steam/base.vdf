@@ -6,5 +6,26 @@
     "previewfile" "${PREVIEW_IMG}"
     "visibility" "2"
     "title" "Platform Efficiency Overlay"
-    "description" "[h1]Platform Efficiency Overlay[/h1]\nSee what your factory is actually moving, and where it is stuck - no belt readers required.\n\n[h2]The overlay[/h2]\nEvery machine, belt, space belt and space pipe is coloured by how much of its capacity it is using.\n\n[list]\n[*][b]Colour[/b] is capacity used - dark red is stopped, green is keeping up.\n[*][b]A green pip[/b] means it is being fed.\n[/list]\n\nThat second part is what throughput alone cannot tell you. Two belts both at 16% need opposite responses:\n\n[list]\n[*]dark [b]with[/b] a pip - fed and still not keeping up, so the problem is here or downstream\n[*]dark [b]without[/b] a pip - starved, so the problem is upstream\n[/list]\n\nFollow the dark tiles upstream, and the first one you meet with a pip is your bottleneck.\n\n[h2]Platform totals[/h2]\nSelect a platform to get its total output on the game's own efficiency gauge. Every route off the platform counts toward it - space belt ports, space pipe ports, and items jumping straight to a platform docked alongside. A space belt or pipe runs a dozen lanes in parallel, and all of them are measured as one flow rather than sampling a single lane.\n\n[h2]Using it[/h2]\n[list]\n[*]Toggle it with the [b]Platform Efficiency[/b] button in the visualization bar, bottom right. It remembers whether it was on.\n[*]Nothing is written to your save, so you can remove it at any time.\n[*]Requires Shapez Shifter.\n[/list]\n\n[h2]Known limits[/h2]\n[list]\n[*]Machines with speed research read as pinned at 100%.\n[*]Fluid moving directly between docked platforms is not measured. Space pipes are.\n[*]On a platform mixing belts and pipes, the percentage is right, but the absolute figure adds items and fluid packages together.\n[/list]\n\nSource, readme and issue tracker: https://github.com/QuinnBast/Shapez2-Space-Platform-Efficiencies\nLicensed under Apache 2.0."
+    "description" "[h1]Platform Efficiency Overlay[/h1]
+See if your factory is actually moving, and where it is stuck - no belt readers required.
+
+[h2]The overlay[/h2]
+Every machine, belt, space belt and space pipe is coloured by how much of its capacity it is using.
+A green overlay means the belt is keeping up. Red or orange indicates less than 50% throughput is being achieved.
+
+A green dot appears in each square to indicate if the belt is saturated with items.
+This helps you to know if items are here, and just not being consumed, or, if nothing is being produced on the belt at all.
+
+[h2]Platform totals[/h2]
+Additionally, select any platform to view its total output on the game's own efficiency gauge.
+
+[h2]Using it[/h2]
+[list]
+[*]Toggle it with the [b]Platform Efficiency[/b] button in the visualization bar, bottom right. It remembers whether it was on.
+[*]Nothing is written to your save, so you can remove it at any time.
+[*]Requires Shapez Shifter.
+[/list]
+
+Source, readme and issue tracker: https://github.com/QuinnBast/Shapez2-Space-Platform-Efficiencies
+Licensed under Apache 2.0."
 }
