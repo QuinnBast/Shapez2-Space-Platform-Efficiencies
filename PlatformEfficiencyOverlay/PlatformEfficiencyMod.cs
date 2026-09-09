@@ -38,6 +38,7 @@ public class PlatformEfficiencyMod : IMod
     private readonly RewirerHandle CommandsHandle;
 
     private readonly PlatformPanelModules Panels;
+    private readonly VisualizationHost Visualizations;
 
     /// The HUD is rebuilt per session, so we track which one we have already extended.
     private HUDVisualizations ExtendedHud;
@@ -65,6 +66,7 @@ public class PlatformEfficiencyMod : IMod
             OnSessionReady);
 
         Panels = new PlatformPanelModules(Tracker);
+        Visualizations = new VisualizationHost(logger, EfficiencyVisualization.VisualizationId);
         Tracker.MapAttached += Panels.SyncProviders;
 
         // A space pipe port has no lane to hook - it packages fluid into a buffer - but
@@ -110,16 +112,9 @@ public class PlatformEfficiencyMod : IMod
 
         ExtendedHud = visualizations;
 
-        try
+        if (!Visualizations.Add<EfficiencyVisualization>(visualizations))
         {
-            visualizations.AddVisualization<EfficiencyVisualization>();
-        }
-        catch (Exception exception)
-        {
-            // The HUD builds visualizations through the game's dependency factory. If it
-            // won't take a type from a mod, fall back to the hotkey rather than dying.
             VisualizationFailed = true;
-            Logger.Exception?.LogException(exception);
             Logger.Info?.Log("Could not add the efficiency toggle to the HUD - press F5 instead.");
         }
     }
@@ -148,6 +143,11 @@ public class PlatformEfficiencyMod : IMod
 
     public void Dispose()
     {
+        // Take the button out of the HUD. Without this the mod cannot be disabled without
+        // restarting, and a hot reload leaves the old button behind next to the new one.
+        Visualizations.Remove(ExtendedHud);
+        ExtendedHud = null;
+
         GameRewirers.RemoveRewirer(CommandsHandle);
         GameRewirers.RemoveRewirer(PanelHandle);
         GameRewirers.RemoveRewirer(TickHandle);

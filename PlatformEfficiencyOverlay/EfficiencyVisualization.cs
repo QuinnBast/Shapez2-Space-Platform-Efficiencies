@@ -18,12 +18,18 @@ public class EfficiencyVisualization : HUDVisualization
     /// </summary>
     public static EfficiencyOverlayRenderer Target;
 
+    /// <summary>
+    /// The preferences key and the handle the mod uses to find its own button again after
+    /// a hot reload, when the old button's type no longer matches this assembly's.
+    /// </summary>
+    public const string VisualizationId = "platform-efficiency";
+
     private readonly EfficiencyOverlayRenderer Renderer;
 
     public override bool IsAvailable => true;
 
     public EfficiencyVisualization(Player player, Viewport viewport)
-        : base(player, viewport, "platform-efficiency")
+        : base(player, viewport, VisualizationId)
     {
         Renderer = Target;
     }

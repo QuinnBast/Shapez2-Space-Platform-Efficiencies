@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -327,16 +327,16 @@ public class EfficiencyTracker : IDisposable
             }
         }
 
-        return "  of those: " + machines + " machines, " + transport
-            + " belts and space paths, " + ports + " platform ports";
+        return "  of those: " + machines + " processing machines, " + transport
+            + " belts and pass-throughs, " + ports + " platform ports";
     }
 
     /// <summary>
     /// The tracked flows by simulation type, commonest first, with how each was classified.
     ///
-    /// The transport/machine split alone is misleading: "machine" only means "not a
-    /// single-lane pass-through", which lumps mergers, splitters, lifts and rails in with
-    /// actual processing buildings. This says what they really are.
+    /// The transport/machine split alone is coarse: "transport" means "held to lane speed",
+    /// which covers mergers, splitters and lifts along with the belts. This says which
+    /// simulations those actually are.
     /// </summary>
     public string DescribeTypes(int top)
     {
@@ -798,9 +798,6 @@ public class EfficiencyTracker : IDisposable
         // item, which only its definition knows - its output lane is just a belt, so
         // measuring a machine against lane speed would rate a perfectly busy machine at a
         // few percent of a belt it was never going to fill.
-        bool transport = IsTransport(localized.Simulation, entry.MeteredLanes, entry.InputLanes);
-        entry.IsTransport = transport;
-
         float fromLanes = 0f;
         for (int i = 0; i < entry.MeteredLanes.Length; i++)
         {
@@ -809,34 +806,46 @@ public class EfficiencyTracker : IDisposable
 
         float fromDefinition = LookupDefinitionRate(localized);
 
-        if (transport && fromLanes > 0f)
+        // Having no inputs does not make something transport. An extractor is fed by the
+        // patch under it rather than by a lane, and its ceiling is how fast it can pull -
+        // which only the definition knows. Measuring one against the belt it feeds rates a
+        // flat-out extractor at a fraction of a belt it was never going to fill. So a
+        // no-input flow only falls back to lane speed when nothing states a rate for it:
+        // space belt port senders, trash, the hub.
+        bool preferLanes = IsPassThrough(localized.Simulation, entry.MeteredLanes, entry.InputLanes)
+            || fromDefinition <= 0f;
+
+        if (preferLanes && fromLanes > 0f)
         {
             source = "lane-speed";
-            return fromLanes;
         }
-
-        if (fromDefinition > 0f)
+        else if (fromDefinition > 0f)
         {
             source = "definition";
-            return fromDefinition;
         }
-
-        if (fromLanes > 0f)
+        else if (fromLanes > 0f)
         {
             source = "lane-speed";
-            return fromLanes;
+        }
+        else
+        {
+            source = "none";
         }
 
-        source = "none";
-        return 0f;
+        // What it is measured against is the honest classification. Mergers, splitters and
+        // lifts state no rate of their own and are held to lane speed exactly as a belt is,
+        // so counting them as machines only inflated the machine count.
+        entry.IsTransport = source != "definition";
+
+        return source == "definition" ? fromDefinition : source == "lane-speed" ? fromLanes : 0f;
     }
 
     /// <summary>
     /// True when items pass straight through rather than being transformed: belts and
-    /// space paths hand the same lane out as both input and output, and a terminal like a
-    /// space belt port or the hub has no output lane at all.
+    /// space paths hand the same lane out as both input and output, and a space belt
+    /// carries a whole bundle of them.
     /// </summary>
-    private static bool IsTransport(ISimulation simulation, IItemLane[] metered, IItemLane[] inputs)
+    private static bool IsPassThrough(ISimulation simulation, IItemLane[] metered, IItemLane[] inputs)
     {
         if (simulation is IItemBundleSimulation)
         {
@@ -854,7 +863,7 @@ public class EfficiencyTracker : IDisposable
             }
         }
 
-        return inputs.Length == 0;
+        return false;
     }
 
     /// <summary>Items per minute the building definition says this can process.</summary>

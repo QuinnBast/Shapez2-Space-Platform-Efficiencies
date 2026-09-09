@@ -16,6 +16,16 @@
     </PropertyGroup>
 
     <!--
+        dotnet build -p:Dev=true  stages the build beside the mods folder instead of
+        into it. The installed copy is memory-mapped by the running game and cannot be
+        overwritten; mod discovery only scans immediate subdirectories of "mods", so a
+        staged build is never loaded as a second mod. Mod Reloader reads it from there.
+    -->
+    <PropertyGroup Condition="'$(Dev)' == 'true'">
+        <OutputPath>$(SPZ2_PERSISTENT)\mods-dev\PlatformEfficiencyOverlay\</OutputPath>
+    </PropertyGroup>
+
+    <!--
         The publish script is bash. MSBuild runs Exec through cmd, which does not have
         Git's bin folder on its PATH, so a bare `sh` fails with 9009 even when Git Bash is
         installed. Find the shell ourselves; set ShellExe to override.
@@ -121,6 +131,16 @@
         </Reference>
         <Reference Include="Game.Core.Map.Layout">
             <HintPath>$(SPZ2_PATH)\Game.Core.Map.Layout.dll</HintPath>
+            <Private>False</Private>
+        </Reference>
+
+        <Reference Include="UnityEngine.UI">
+            <HintPath>$(SPZ2_PATH)\UnityEngine.UI.dll</HintPath>
+            <Private>False</Private>
+        </Reference>
+
+        <Reference Include="Unity.Core">
+            <HintPath>$(SPZ2_PATH)\Unity.Core.dll</HintPath>
             <Private>False</Private>
         </Reference>
 
