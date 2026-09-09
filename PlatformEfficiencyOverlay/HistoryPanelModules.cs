@@ -32,7 +32,7 @@ internal static class HistoryPanelModules
         // Read through delegates, so the chart follows both the live data and a change of
         // range without the panel being rebuilt.
         yield return new EfficiencyGraphModule.Data(
-            buffer => history.Read(OverlayTuning.HistoryRange, tracker.SimulationSeconds, ceiling, buffer),
+            buffer => history.Read(OverlayTuning.HistoryRange, ceiling, buffer),
             () => Caption(tracker, history, ceiling));
     }
 
@@ -48,9 +48,10 @@ internal static class HistoryPanelModules
     /// </summary>
     private static string Caption(EfficiencyTracker tracker, MachineHistory history, float ceiling)
     {
-        float live = history.Live(0, tracker.SimulationSeconds, ceiling);
+        // The finest range, whose newest bucket covers the last whole second.
+        float now = history.Latest(0);
 
-        return Rate(live * ceiling) + " of " + Rate(ceiling) + " per min";
+        return Rate(now * ceiling) + " of " + Rate(ceiling) + " per min";
     }
 
     private static string Rate(float perMinute)

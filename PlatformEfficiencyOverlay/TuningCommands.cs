@@ -274,7 +274,7 @@ public class TuningCommands : IConsoleRewirer
             }
 
             shown++;
-            int platformCount = summary.History.Read(range, now, summary.HistoryCeiling, series);
+            int platformCount = summary.History.Read(range, summary.HistoryCeiling, series);
 
             output("platform " + island.Id + ": " + MachineHistory.RangeNames[range]
                 + ", " + Covered(summary.History.CoveredSeconds(range)) + " recorded"
@@ -317,7 +317,7 @@ public class TuningCommands : IConsoleRewirer
                 continue;
             }
 
-            int count = entry.History.Read(range, now, entry.MaxItemsPerMinute, series);
+            int count = entry.History.Read(range, entry.MaxItemsPerMinute, series);
             float peak = 0f;
             float total = 0f;
 
@@ -476,6 +476,7 @@ public class TuningCommands : IConsoleRewirer
             + ", supply " + (int)(entry.Saturation * 100f) + "% full"
             + (entry.IsSaturated ? " (fed - look here or downstream)" : " (starved - look upstream)")
             + ", metering " + entry.MeteredLanes.Length + " lane(s)"
+            + ", history " + (entry.History != null ? "on" : "off")
             + " on " + localized.Simulation.GetType().Name;
     }
 

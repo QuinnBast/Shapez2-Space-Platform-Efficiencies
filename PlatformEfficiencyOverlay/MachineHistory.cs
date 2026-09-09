@@ -1,4 +1,4 @@
-/// <summary>
+﻿/// <summary>
 /// One machine's - or one platform's - capacity used over time, kept as five short rings
 /// instead of one long one.
 ///
@@ -105,10 +105,16 @@ public sealed class MachineHistory
     }
 
     /// <summary>
-    /// The series for one range as fractions of capacity, oldest first, with the open
-    /// bucket's partial value last. Returns how many were written.
+    /// The series for one range as fractions of capacity, oldest first. Returns how many
+    /// were written.
+    ///
+    /// Closed buckets only. The open one is no use as a live tip: everything is advanced
+    /// once a second and the finest range closes once a second, so the open bucket is
+    /// always read just after it was emptied and always reads as nothing. The finest
+    /// range's newest closed bucket is a full second old at worst, which is as live as
+    /// this needs to be.
     /// </summary>
-    public int Read(int range, float nowSeconds, float ceiling, float[] destination)
+    public int Read(int range, float ceiling, float[] destination)
     {
         if (destination == null || range < 0 || range >= Ranges)
         {
@@ -126,31 +132,23 @@ public sealed class MachineHistory
             destination[written++] = Percents[range * Buckets + bucket] / 100f;
         }
 
-        if (written < destination.Length)
-        {
-            destination[written++] = Live(range, nowSeconds, ceiling);
-        }
-
         return written;
     }
 
-    /// <summary>How the open bucket is running so far, so a graph has a live tip.</summary>
-    public float Live(int range, float nowSeconds, float ceiling)
+    /// <summary>
+    /// The newest closed bucket of a range, as a fraction of capacity - what to show as
+    /// the current figure.
+    /// </summary>
+    public float Latest(int range)
     {
-        if (range < 0 || range >= Ranges || ceiling <= 0f)
+        if (range < 0 || range >= Ranges || FilledFor(range) == 0)
         {
             return 0f;
         }
 
-        float elapsed = nowSeconds - OpenedAt[range];
+        int newest = (HeadFor(range) - 1 + Buckets) % Buckets;
 
-        // Just after a bucket opens there is not enough of it to divide by.
-        if (elapsed < 0.25f)
-        {
-            return 0f;
-        }
-
-        return Counting[range] * 60f / elapsed / ceiling;
+        return Percents[range * Buckets + newest] / 100f;
     }
 
     /// <summary>How much of a range holds data, in seconds.</summary>
