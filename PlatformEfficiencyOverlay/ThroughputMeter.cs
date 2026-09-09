@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using Game.Core.Simulation;
 
 /// <summary>
@@ -46,6 +46,17 @@ public class ThroughputMeter
         }
 
         long elapsed = now.Value - BucketStart.Value;
+
+        // A backwards clock means a different save. Everything measured belongs to the old
+        // one, and waiting for simulation time to catch up would mean waiting it out.
+        if (elapsed < 0)
+        {
+            Array.Clear(Buckets, 0, BucketCount);
+            Head = 0;
+            BucketStart = now;
+            return;
+        }
+
         if (elapsed < BucketDuration.Value)
         {
             return;
