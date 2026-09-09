@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
 using Game.Core.Research;
 using ShapezShifter.Hijack;
@@ -206,6 +206,12 @@ public class PlatformPanelModules : IIslandModulesRewirer
             if (gauge != null)
             {
                 yield return gauge;
+            }
+
+            foreach (IHUDSidePanelModuleData module in HistoryPanelModules.For(
+                Owner.Tracker, summary.History, summary.HistoryCeiling))
+            {
+                yield return module;
             }
         }
 

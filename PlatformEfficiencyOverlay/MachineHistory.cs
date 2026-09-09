@@ -1,65 +1,62 @@
-using System;
-
 /// <summary>
-/// One machine's throughput over time, kept as four short rings instead of one long one.
+/// One machine's - or one platform's - capacity used over time, kept as five short rings
+/// instead of one long one.
 ///
-/// The obvious shape - a bucket every 5 seconds for six hours - is 4,320 buckets, which
-/// across a completed factory is a quarter of a gigabyte. Four rings of 60, one per
-/// selectable range, is 240 buckets for the same six hours, because the older a bucket is
-/// the coarser it may be without anyone noticing. That is the whole trick, and it is what
-/// makes per-machine history affordable at all: about half a kilobyte each, so roughly
-/// 45 MB across the ~90k processing machines of a finished save.
+/// The obvious shape, a bucket every second for six hours, is 21,600 buckets per machine
+/// and gigabytes across a finished factory. Five rings of 60, one per selectable range, is
+/// 300 buckets for the same six hours, because the older a bucket is the coarser it may be
+/// without anyone noticing. That is what makes per-machine history affordable at all.
+///
+/// Buckets hold a percentage of capacity, not a rate: one byte each, and the same thing
+/// the colour wash means, so a graph and the overlay cannot disagree. 300 bytes of buckets
+/// works out around 35 MB across the ~90k machines of a completed save.
 ///
 /// Belts are deliberately excluded by the caller. They outnumber machines four to one and
-/// their history answers nothing a machine's does not - including them is the difference
-/// between 45 MB and 250 MB.
-///
-/// Buckets hold items per minute, not item counts. Rates are directly comparable across
-/// ranges, which is what a graph needs, and a rate fits a ushort with room to spare where
-/// a six-minute count would be flirting with overflow.
+/// their history answers nothing a machine's does not.
 /// </summary>
 public sealed class MachineHistory
 {
-    /// <summary>Seconds covered by one bucket, per range: 5m, 30m, 1h, 6h across 60 buckets.</summary>
-    public static readonly int[] BucketSeconds = { 5, 30, 60, 360 };
+    /// <summary>Seconds covered by one bucket, per range. 60 buckets each.</summary>
+    public static readonly int[] BucketSeconds = { 1, 5, 30, 60, 360 };
 
-    /// <summary>Short labels for the ranges, in the same order.</summary>
-    public static readonly string[] RangeNames = { "5m", "30m", "1h", "6h" };
+    /// <summary>What each range spans, for the range selector.</summary>
+    public static readonly string[] RangeNames = { "1m", "5m", "30m", "1h", "6h" };
 
     public const int Buckets = 60;
+
     public static int Ranges => BucketSeconds.Length;
 
-    /// Closed buckets, items per minute. Range r occupies [r * Buckets, (r + 1) * Buckets).
-    private readonly ushort[] Rates = new ushort[Buckets * 4];
+    /// Percent of capacity per closed bucket, one byte each. Range r occupies
+    /// [r * Buckets, (r + 1) * Buckets). 255 is the cap, not a full scale: research can
+    /// push a machine past its stated rate and clipping that is better than wrapping it.
+    private readonly byte[] Percents = new byte[Buckets * 5];
 
     /// Items counted into the bucket currently open, per range.
-    private readonly uint[] Counting = new uint[4];
+    private readonly uint[] Counting = new uint[5];
 
     /// Simulated seconds at which the open bucket started, per range.
-    private readonly float[] OpenedAt = new float[4];
+    private readonly float[] OpenedAt = new float[5];
 
-    /// Index of the open bucket and how many are filled, six bits per range each.
+    /// Index of the open bucket, and how many are filled: six bits per range in each.
     private uint Heads;
     private uint Filled;
 
-    /// Items this machine had produced when it was last advanced.
+    /// Items handed over as of the last advance, so the next one knows the difference.
     private long LastTotal;
 
     private bool Started;
 
     /// <summary>
     /// Folds everything produced since the last call into the open buckets, closing any
-    /// that have run their span.
-    ///
-    /// Cheap enough to call on every machine every second: a handful of adds, and a
-    /// bucket actually closes at most once per range per call.
+    /// that have run their span. Cheap enough to call on every machine every second.
     /// </summary>
-    public void Advance(float nowSeconds, long total)
+    /// <param name="ceiling">Items per minute this could manage if never held up.</param>
+    public void Advance(float nowSeconds, long total, float ceiling)
     {
         if (!Started)
         {
             // Nothing is known about the past, so start the clock here rather than
-            // attributing a lifetime of production to the first bucket.
+            // charging a whole session's production to the first bucket.
             Started = true;
             LastTotal = total;
 
@@ -89,15 +86,15 @@ public sealed class MachineHistory
             while (nowSeconds - OpenedAt[range] >= span)
             {
                 // Only the first close of a long gap gets the counted items. A gap means
-                // nobody looked for a while - the save was loading, or the game was
-                // paused - and spreading one number across every skipped bucket would
-                // invent a plateau that never happened.
-                Close(range, closed == 0 ? ToRate(Counting[range], span) : (ushort)0);
+                // nobody advanced this for a while - a save loading, or a paused game -
+                // and spreading one number over every skipped bucket would invent a
+                // plateau that never happened.
+                Close(range, closed == 0 ? ToPercent(Counting[range], span, ceiling) : (byte)0);
                 Counting[range] = 0;
                 OpenedAt[range] += span;
                 closed++;
 
-                // A gap longer than the whole ring: stop rather than spin sixty times.
+                // A gap longer than the whole ring: catch up rather than spin.
                 if (closed >= Buckets)
                 {
                     OpenedAt[range] = nowSeconds;
@@ -108,10 +105,10 @@ public sealed class MachineHistory
     }
 
     /// <summary>
-    /// The series for one range, oldest first, with the open bucket's partial rate last.
-    /// Returns how many entries were written; the rest of the destination is untouched.
+    /// The series for one range as fractions of capacity, oldest first, with the open
+    /// bucket's partial value last. Returns how many were written.
     /// </summary>
-    public int Read(int range, float nowSeconds, float[] destination)
+    public int Read(int range, float nowSeconds, float ceiling, float[] destination)
     {
         if (destination == null || range < 0 || range >= Ranges)
         {
@@ -121,47 +118,51 @@ public sealed class MachineHistory
         int filled = FilledFor(range);
         int head = HeadFor(range);
         int written = 0;
-        int room = destination.Length;
 
         // The oldest filled bucket sits `filled` places behind the open one.
-        for (int i = 0; i < filled && written < room; i++)
+        for (int i = 0; i < filled && written < destination.Length; i++)
         {
             int bucket = (head - filled + i + Buckets * 2) % Buckets;
-            destination[written++] = Rates[range * Buckets + bucket];
+            destination[written++] = Percents[range * Buckets + bucket] / 100f;
         }
 
-        if (written < room)
+        if (written < destination.Length)
         {
-            destination[written++] = Live(range, nowSeconds);
+            destination[written++] = Live(range, nowSeconds, ceiling);
         }
 
         return written;
     }
 
-    /// <summary>The rate the open bucket is running at so far, so a graph has a live tip.</summary>
-    public float Live(int range, float nowSeconds)
+    /// <summary>How the open bucket is running so far, so a graph has a live tip.</summary>
+    public float Live(int range, float nowSeconds, float ceiling)
     {
-        if (range < 0 || range >= Ranges)
+        if (range < 0 || range >= Ranges || ceiling <= 0f)
         {
             return 0f;
         }
 
         float elapsed = nowSeconds - OpenedAt[range];
 
-        // Right after a bucket opens there is not enough of it to divide by.
-        return elapsed < 0.5f ? 0f : Counting[range] * 60f / elapsed;
+        // Just after a bucket opens there is not enough of it to divide by.
+        if (elapsed < 0.25f)
+        {
+            return 0f;
+        }
+
+        return Counting[range] * 60f / elapsed / ceiling;
     }
 
-    /// <summary>How much of a range actually holds data, in seconds of coverage.</summary>
+    /// <summary>How much of a range holds data, in seconds.</summary>
     public int CoveredSeconds(int range)
     {
         return range < 0 || range >= Ranges ? 0 : FilledFor(range) * BucketSeconds[range];
     }
 
-    private void Close(int range, ushort rate)
+    private void Close(int range, byte percent)
     {
         int head = HeadFor(range);
-        Rates[range * Buckets + head] = rate;
+        Percents[range * Buckets + head] = percent;
 
         SetHead(range, (head + 1) % Buckets);
 
@@ -172,15 +173,21 @@ public sealed class MachineHistory
         }
     }
 
-    private static ushort ToRate(uint count, float seconds)
+    private static byte ToPercent(uint count, float seconds, float ceiling)
     {
-        if (seconds <= 0f)
+        if (seconds <= 0f || ceiling <= 0f)
         {
             return 0;
         }
 
-        float rate = count * 60f / seconds;
-        return rate >= ushort.MaxValue ? ushort.MaxValue : (ushort)rate;
+        float percent = count * 60f / seconds / ceiling * 100f;
+
+        if (percent <= 0f)
+        {
+            return 0;
+        }
+
+        return percent >= 255f ? (byte)255 : (byte)(percent + 0.5f);
     }
 
     private int HeadFor(int range)

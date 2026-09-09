@@ -435,7 +435,7 @@ public class EfficiencyOverlayRenderer : IDisposable
     /// how bad something is reads off the colour directly: a belt limping along at 1% is
     /// nearly as dark as one that has stopped, not a comfortable yellow.
     /// </summary>
-    private static Color Gradient(float t)
+    public static Color Gradient(float t)
     {
         float floor = OverlayTuning.BlockedShade;
 

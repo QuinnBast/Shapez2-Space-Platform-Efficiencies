@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using JetBrains.Annotations;
 using MonoMod.RuntimeDetour;
 using ShapezShifter.Flow;
@@ -35,6 +35,7 @@ public class PlatformEfficiencyMod : IMod
     private readonly Hook FluidLaunchHook;
     private readonly RewirerHandle TickHandle;
     private readonly RewirerHandle PanelHandle;
+    private readonly RewirerHandle BuildingPanelHandle;
     private readonly RewirerHandle CommandsHandle;
 
     private readonly PlatformPanelModules Panels;
@@ -77,6 +78,7 @@ public class PlatformEfficiencyMod : IMod
 
         TickHandle = this.OnTick(OnTick);
         PanelHandle = GameRewirers.AddRewirer(Panels);
+        BuildingPanelHandle = GameRewirers.AddRewirer(new BuildingPanelModules(Tracker));
         CommandsHandle = GameRewirers.AddRewirer(new TuningCommands(logger, Tracker));
 
         Logger.Info?.Log("Platform Efficiency Overlay ready.");
@@ -149,6 +151,7 @@ public class PlatformEfficiencyMod : IMod
         ExtendedHud = null;
 
         GameRewirers.RemoveRewirer(CommandsHandle);
+        GameRewirers.RemoveRewirer(BuildingPanelHandle);
         GameRewirers.RemoveRewirer(PanelHandle);
         GameRewirers.RemoveRewirer(TickHandle);
         FluidLaunchHook?.Dispose();
@@ -156,6 +159,9 @@ public class PlatformEfficiencyMod : IMod
         VisualizationsHook?.Dispose();
         DrawHook?.Dispose();
         Tracker.MapAttached -= Panels.SyncProviders;
+        // The chart prefab is a component from this assembly. Leaving it behind would have
+        // the next generation of the mod instantiating the old assembly's copy.
+        EfficiencyGraphTemplate.Release();
         Renderer.Dispose();
         Tracker.Dispose();
         EfficiencyVisualization.Target = null;

@@ -214,16 +214,51 @@ public class TuningCommands : IConsoleRewirer
         }
 
         Player player = GameHelper.Core?.LocalPlayer;
-        if (player == null || player.InteractionState.BuildingSelection.Count == 0)
+        if (player == null)
         {
-            output("Select a machine first, then run peo.history again.");
+            output("No local player.");
             return;
         }
 
         int range = OverlayTuning.HistoryRange;
-        float now = map.Simulator != null ? map.Simulator.SimulationTime.FloatSeconds : 0f;
+        float now = Tracker.SimulationSeconds;
         float[] series = new float[MachineHistory.Buckets + 1];
         int shown = 0;
+
+        // A platform selected in space view, which is the same history one range up.
+        foreach (IslandModel island in player.InteractionState.IslandSelection)
+        {
+            if (shown >= 4)
+            {
+                break;
+            }
+
+            if (!Tracker.TryGetSummary(island.Id, out EfficiencyTracker.IslandSummary summary)
+                || summary.History == null)
+            {
+                continue;
+            }
+
+            shown++;
+            int platformCount = summary.History.Read(range, now, summary.HistoryCeiling, series);
+
+            output("platform " + island.Id + ": " + MachineHistory.RangeNames[range]
+                + ", " + Covered(summary.History.CoveredSeconds(range)) + " recorded"
+                + ", shipping " + summary.OutputItemsPerMinute.ToString("0")
+                + " of " + summary.HistoryCeiling.ToString("0") + "/min");
+
+            output("  " + Sparkline(series, platformCount));
+        }
+
+        if (player.InteractionState.BuildingSelection.Count == 0)
+        {
+            if (shown == 0)
+            {
+                output("Select a machine or a platform first, then run peo.history again.");
+            }
+
+            return;
+        }
 
         foreach (BuildingModel building in player.InteractionState.BuildingSelection)
         {
@@ -248,11 +283,14 @@ public class TuningCommands : IConsoleRewirer
                 continue;
             }
 
-            int count = entry.History.Read(range, now, series);
+            int count = entry.History.Read(range, now, entry.MaxItemsPerMinute, series);
             float peak = 0f;
+            float total = 0f;
 
             for (int i = 0; i < count; i++)
             {
+                total += series[i];
+
                 if (series[i] > peak)
                 {
                     peak = series[i];
@@ -261,11 +299,11 @@ public class TuningCommands : IConsoleRewirer
 
             output(building.Definition.Id + ": " + MachineHistory.RangeNames[range]
                 + ", " + Covered(entry.History.CoveredSeconds(range)) + " recorded"
-                + ", peak " + peak.ToString("0") + "/min"
-                + ", now " + entry.ItemsPerMinute.ToString("0") + "/min"
-                + ", ceiling " + entry.MaxItemsPerMinute.ToString("0") + "/min");
+                + ", peak " + (int)(peak * 100f) + "%"
+                + ", average " + (count > 0 ? (int)(total / count * 100f) : 0) + "%"
+                + ", now " + (int)(entry.Utilization * 100f) + "%");
 
-            output("  " + Sparkline(series, count, entry.HasKnownCeiling ? entry.MaxItemsPerMinute : peak));
+            output("  " + Sparkline(series, count));
         }
 
         if (shown == 0)
@@ -274,9 +312,9 @@ public class TuningCommands : IConsoleRewirer
         }
     }
 
-    /// Scaled against the ceiling, not against its own peak, so the height means capacity
-    /// used - the same thing the colour wash means - rather than "busy for this machine".
-    private static string Sparkline(float[] series, int count, float ceiling)
+    /// Each step is a tenth of capacity, so the height means the same thing the colour
+    /// wash does rather than "busy for this machine".
+    private static string Sparkline(float[] series, int count)
     {
         if (count <= 0)
         {
@@ -288,8 +326,7 @@ public class TuningCommands : IConsoleRewirer
 
         for (int i = 0; i < count; i++)
         {
-            float fraction = ceiling > 0f ? series[i] / ceiling : 0f;
-            int level = (int)(fraction * (Levels.Length - 1) + 0.5f);
+            int level = (int)(series[i] * (Levels.Length - 1) + 0.5f);
 
             if (level < 0)
             {

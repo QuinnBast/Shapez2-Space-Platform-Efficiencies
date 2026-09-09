@@ -167,6 +167,15 @@ public class EfficiencyTracker : IDisposable
         /// <summary>The one number worth putting on the platform: what it ships, or what
         /// flows through it when it has no ports of its own.</summary>
         public float HeadlineItemsPerMinute => HasPorts ? OutputItemsPerMinute : BusiestItemsPerMinute;
+
+        /// How much of what this platform could ship it has been shipping, over time.
+        /// Only platforms with output ports get one: without ports there is no ceiling to
+        /// be a percentage of, which is the same reason they get no gauge either.
+        public MachineHistory History;
+
+        /// The ceiling the history was recorded against, so a reader scales the live tip
+        /// the same way the closed buckets were scaled.
+        public float HistoryCeiling;
     }
 
     private const float SaturationSmoothing = 0.35f;
@@ -212,9 +221,9 @@ public class EfficiencyTracker : IDisposable
 
     /// A fixed count per frame is either slow on a big base or a stall on a small one, so
     /// the sweep is given a slice of frame time instead and adapts to the machine.
-    /// Roughly what one MachineHistory costs: 240 buckets plus its bookkeeping and the
-    /// headers of the four objects it is made of. Only used to report the total.
-    private const int HistoryBytes = 640;
+    /// Roughly what one MachineHistory costs: 300 one-byte buckets plus its bookkeeping
+    /// and the headers of the three arrays it is made of. Only used to report the total.
+    private const int HistoryBytes = 420;
 
     private const long RegistrationBudgetMilliseconds = 3;
     private const int RegistrationBatch = 64;
@@ -232,6 +241,9 @@ public class EfficiencyTracker : IDisposable
     }
 
     public IMapModel TrackedMap => Map;
+
+    /// <summary>Simulated seconds, which is the clock every history is kept on.</summary>
+    public float SimulationSeconds => Simulator == null ? 0f : Simulator.SimulationTime.FloatSeconds;
 
     /// <summary>True while the initial sweep of the map is still being drained.</summary>
     public bool RegistrationPending => Pending != null;
@@ -364,6 +376,14 @@ public class EfficiencyTracker : IDisposable
         foreach (Entry entry in Entries.Values)
         {
             if (entry.History != null)
+            {
+                histories++;
+            }
+        }
+
+        foreach (IslandSummary summary in Summaries.Values)
+        {
+            if (summary.History != null)
             {
                 histories++;
             }
@@ -528,7 +548,52 @@ public class EfficiencyTracker : IDisposable
         foreach (Entry entry in Entries.Values)
         {
             entry.Meter.Advance(now);
-            entry.History?.Advance(seconds, entry.TotalItems);
+            entry.History?.Advance(seconds, entry.TotalItems, entry.MaxItemsPerMinute);
+        }
+
+        AdvancePlatformHistories(seconds);
+    }
+
+    /// <summary>
+    /// Rolls each platform's history forward from its output ports.
+    ///
+    /// Totalled here rather than read off the summary because the summary is only
+    /// recomputed while the overlay is on screen, and history has to accrue whether
+    /// anyone is looking or not.
+    /// </summary>
+    private void AdvancePlatformHistories(float seconds)
+    {
+        if (!OverlayTuning.HistoryEnabled)
+        {
+            return;
+        }
+
+        foreach (KeyValuePair<IslandId, List<Entry>> pair in IslandPorts)
+        {
+            List<Entry> ports = pair.Value;
+            long total = 0;
+            float ceiling = 0f;
+
+            for (int i = 0; i < ports.Count; i++)
+            {
+                total += ports[i].TotalItems;
+                ceiling += ports[i].MaxItemsPerMinute;
+            }
+
+            if (ceiling <= 0f)
+            {
+                continue;
+            }
+
+            IslandSummary summary = GetOrCreateSummary(pair.Key);
+            summary.HistoryCeiling = ceiling;
+
+            if (summary.History == null)
+            {
+                summary.History = new MachineHistory();
+            }
+
+            summary.History.Advance(seconds, total, ceiling);
         }
     }
 
