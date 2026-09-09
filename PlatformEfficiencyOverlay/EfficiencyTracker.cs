@@ -518,9 +518,30 @@ public class EfficiencyTracker : IDisposable
         text.Append('\n').Append("  ").Append(items)
             .Append(" item(s) through them since tracking began");
 
-        for (int i = 0; i < ports.Count && i < 12; i++)
+        // Worst first, and the ones already at capacity collapsed into a count. Listing
+        // in registration order and truncating hid precisely the ports worth seeing.
+        List<Entry> sorted = new List<Entry>(ports);
+        sorted.Sort((a, b) => a.Utilization.CompareTo(b.Utilization));
+
+        int atCapacity = 0;
+        int listed = 0;
+
+        for (int i = 0; i < sorted.Count; i++)
         {
-            Entry port = ports[i];
+            Entry port = sorted[i];
+
+            if (port.Utilization >= 0.995f)
+            {
+                atCapacity++;
+                continue;
+            }
+
+            if (listed >= 10)
+            {
+                continue;
+            }
+
+            listed++;
 
             text.Append('\n').Append("    ").Append(port.Localized.Simulation.GetType().Name)
                 .Append(": ").Append(port.ItemsPerMinute.ToString("0.#"))
@@ -529,13 +550,20 @@ public class EfficiencyTracker : IDisposable
                 .Append(port.MeteredLanes.Length).Append(" lane(s)) = ")
                 .Append((port.Utilization * 100f).ToString("0.#")).Append('%')
                 .Append(port.IsUnconnectedPort ? ", nothing opposite - not counted"
-                    : port.InUse ? "" : ", unused - not counted");
+                    : !port.InUse ? ", unused - not counted"
+                    : port.MaxItemsPerMinute <= 0f ? ", no ceiling - carries nothing to the total"
+                    : "");
         }
 
-        if (ports.Count > 12)
+        int below = sorted.Count - atCapacity;
+
+        if (below > listed)
         {
-            text.Append('\n').Append("    ...and ").Append(ports.Count - 12).Append(" more");
+            text.Append('\n').Append("    ...and ").Append(below - listed)
+                .Append(" more below capacity");
         }
+
+        text.Append('\n').Append("    ").Append(atCapacity).Append(" port(s) at capacity");
 
         return text.ToString();
     }
