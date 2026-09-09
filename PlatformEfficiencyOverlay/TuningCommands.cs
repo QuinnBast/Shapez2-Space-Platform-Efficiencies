@@ -120,6 +120,15 @@ public class TuningCommands : IConsoleRewirer
 
         Register(console, "ports", null, Ports);
 
+        Register(console, "clock", null, context =>
+        {
+            foreach (string line in Tracker.DescribeClock().Split('\n'))
+            {
+                context.Output?.Invoke(line);
+                Logger.Info?.Log(line);
+            }
+        });
+
         Register(console, "panel-scroll", new DebugConsole.BoolOption("enabled"), context =>
         {
             OverlayTuning.PanelScrolling = context.GetBool(0);

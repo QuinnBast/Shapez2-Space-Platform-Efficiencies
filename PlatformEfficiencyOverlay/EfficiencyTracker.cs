@@ -232,6 +232,13 @@ public class EfficiencyTracker : IDisposable
 
     private IMapModel Map;
     private ISimulator Simulator;
+
+    /// How many times a map has been picked up, and how many times every history has been
+    /// rolled forward. Both are only here to be reported: an empty graph is either nothing
+    /// happening or nothing being recorded, and these separate the two.
+    private int AttachCount;
+    private int AdvanceCount;
+    private float LastAdvanceSeconds;
     private Ticks LastAggregate;
     private Ticks LastKeepWarm;
 
@@ -323,6 +330,7 @@ public class EfficiencyTracker : IDisposable
 
         Detach();
 
+        AttachCount++;
         Map = map;
         Simulator = map?.Simulator;
         if (Simulator == null)
@@ -394,6 +402,49 @@ public class EfficiencyTracker : IDisposable
             + " belts and pass-throughs, " + ports + " platform ports\n"
             + "  history on " + histories + " of them, about "
             + (histories * HistoryBytes / 1048576f).ToString("0.0") + " MB";
+    }
+
+    /// <summary>
+    /// Whether recording is actually happening, and on what clock.
+    ///
+    /// A graph that stays empty has two quite different causes - nothing is passing through
+    /// the machine, or nothing is being rolled forward - and they look identical from the
+    /// panel. Buckets close on simulation time, so a clock that is not moving means no
+    /// bucket ever closes however busy the factory is.
+    /// </summary>
+    public string DescribeClock()
+    {
+        int histories = 0;
+        int recorded = 0;
+        int busiest = 0;
+
+        foreach (Entry entry in Entries.Values)
+        {
+            if (entry.History == null)
+            {
+                continue;
+            }
+
+            histories++;
+            int covered = entry.History.CoveredSeconds(0);
+
+            if (covered > 0)
+            {
+                recorded++;
+            }
+
+            if (covered > busiest)
+            {
+                busiest = covered;
+            }
+        }
+
+        return "clock " + SimulationSeconds.ToString("0.0") + "s simulated"
+            + ", rolled " + AdvanceCount + " time(s), last at " + LastAdvanceSeconds.ToString("0.0") + "s"
+            + "\n  map picked up " + AttachCount + " time(s)"
+            + ", " + Entries.Count + " flow(s), " + histories + " recording"
+            + "\n  " + recorded + " of them have closed a bucket, deepest "
+            + busiest + "s of the 1m range";
     }
 
     /// <summary>
@@ -600,6 +651,8 @@ public class EfficiencyTracker : IDisposable
         // of starting from the moment someone looked. Simulation time, so a paused game
         // records nothing rather than recording a stall.
         float seconds = now.FloatSeconds;
+        AdvanceCount++;
+        LastAdvanceSeconds = seconds;
 
         foreach (Entry entry in Entries.Values)
         {
