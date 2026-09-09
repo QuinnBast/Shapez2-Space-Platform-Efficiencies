@@ -325,7 +325,7 @@ public class EfficiencyTracker : IDisposable
     {
         List<ILocalizedSimulation> pending = Pending;
 
-        return pending == null
+        return pending == null || PendingIndex >= pending.Count
             ? null
             : "still registering: " + PendingIndex + " of " + pending.Count
                 + " simulations - the numbers below are incomplete";
@@ -480,10 +480,40 @@ public class EfficiencyTracker : IDisposable
 
             text.Append('\n').Append("  ").Append(role).Append(' ').Append(i).Append(": ")
                 .Append(lane.GetType().Name)
-                .Append(", maxStep ").Append(lane.MaxStep_S.Value)
-                .Append(", freeAtEnd ").Append(lane.FreeStepsAtTheEnd.Value)
-                .Append(", items ").Append(lane.ItemCount)
-                .Append(lane.MaxStep_S < Steps.Zero ? ", would refuse" : ", would accept");
+                .Append(", holds ").Append(Capacity(lane))
+                .Append(" in ").Append(Traversal(lane).ToString("0.###")).Append('s')
+                .Append(" -> ").Append(MaxRateFromLaneSpeed(lane).ToString("0.#")).Append("/min")
+                .Append(", items ").Append(lane.ItemCount);
+        }
+    }
+
+    private static int Capacity(IItemLane lane)
+    {
+        switch (lane)
+        {
+            case BeltPathLane path:
+                return path.Slots.Count;
+            case FastBeltPathLane fast:
+                return fast.ItemCapacity;
+            case SingleItemLane _:
+                return 1;
+            default:
+                return 0;
+        }
+    }
+
+    private static float Traversal(IItemLane lane)
+    {
+        switch (lane)
+        {
+            case BeltPathLane path:
+                return path.Duration_T.FloatSeconds;
+            case FastBeltPathLane fast:
+                return fast.Duration_T.FloatSeconds;
+            case SingleItemLane single:
+                return single.Duration_T.FloatSeconds;
+            default:
+                return 0f;
         }
     }
 
@@ -954,45 +984,41 @@ public class EfficiencyTracker : IDisposable
             return entry.FluidSource.FluidContainer.Level >= 0.98f ? 1f : 0f;
         }
 
-        // Belts hand the same lane out as input and output; ports keep theirs on the
-        // metered side. Either way, the lanes feeding this thing are what matter.
-        IItemLane[] lanes = entry.InputLanes.Length > 0 ? entry.InputLanes : entry.MeteredLanes;
-        if (lanes.Length == 0)
+        return Stuck(entry);
+    }
+
+    /// <summary>
+    /// Whether goods are stuck here: something on the way out, and nothing going out.
+    ///
+    /// Three attempts at asking the lane itself all failed, and the reason is worth
+    /// recording. Occupancy made a belt running flat out look backed up, because a
+    /// flat-out belt is nearly full. FreeStepsAtTheEnd is small for most of the time on
+    /// any moving belt, because the last item is near the entrance. And MaxStep_S - which
+    /// is what CanAcceptItem actually tests - is an internal maintained during the
+    /// simulation's own update and chained through NextLane; measured from outside it
+    /// reads deeply negative on a perfectly healthy belt carrying ten items at full rate.
+    /// None of the three can be read from here.
+    ///
+    /// What can be read is our own measurement, which is the thing we trust everywhere
+    /// else: if items are sitting on the output and the rate is zero, they are not
+    /// leaving. If the rate is above zero, by definition nothing is stuck.
+    /// </summary>
+    private static float Stuck(Entry entry)
+    {
+        if (entry.ItemsPerMinute > 0.01f)
         {
             return 0f;
         }
 
-        float total = 0f;
-        for (int i = 0; i < lanes.Length; i++)
+        for (int i = 0; i < entry.MeteredLanes.Length; i++)
         {
-            total += Backed(lanes[i]);
+            if (entry.MeteredLanes[i].HasItem)
+            {
+                return 1f;
+            }
         }
 
-        return total / lanes.Length;
-    }
-
-    /// <summary>
-    /// Whether a lane would refuse another item - which is the lane's own test, not a
-    /// guess at one.
-    ///
-    /// CanAcceptItem comes down to MaxStep_S being negative: the lane cannot advance, so
-    /// nothing can enter it. A single item lane holds exactly one, so anything on it is a
-    /// refusal too.
-    ///
-    /// Two earlier attempts at this were both wrong, in the same direction. Occupancy - how
-    /// full the lane was - made a belt running flat out look backed up, since a flat-out
-    /// belt is nearly full of items; and free space behind the last item is small for most
-    /// of the time on any moving belt, because the last item is near the entrance. Both
-    /// put a pip on half the map.
-    /// </summary>
-    private static float Backed(IItemLane lane)
-    {
-        if (lane.MaxStep_S < Steps.Zero)
-        {
-            return 1f;
-        }
-
-        return lane is SingleItemLane && lane.HasItem ? 1f : 0f;
+        return 0f;
     }
 
     private static EfficiencyStatus Classify(Entry entry)
@@ -1343,27 +1369,38 @@ public class EfficiencyTracker : IDisposable
         }
     }
 
-    /// <summary>Items per minute a belt-style lane can carry, from its speed and item spacing.</summary>
+    /// <summary>
+    /// Items per minute a lane can carry: how many fit on it, over how long a traversal
+    /// takes.
+    ///
+    /// For an ordinary belt this is the same answer as dividing item spacing by lane
+    /// speed, since a belt's capacity is its length over that spacing. It differs - and is
+    /// right where the other was wrong - for the fast lanes the space islands use, which
+    /// are enormously long and move enormously fast, and whose items are not spaced at
+    /// LaneConstants.ItemSpacing at all. Measuring those by spacing gave a space merger a
+    /// ceiling of 86,400 a minute and a reading of 1.8% while it worked perfectly.
+    /// </summary>
     public static float MaxRateFromLaneSpeed(IItemLane lane)
     {
-        Ticks perItem;
         switch (lane)
         {
             case BeltPathLane path:
-                perItem = LaneConstants.ItemSpacing / path.StepsPerTick_S;
-                break;
+                return Carrying(path.Slots.Count, path.Duration_T);
             case FastBeltPathLane fast:
-                perItem = LaneConstants.ItemSpacing / fast.StepsPerTick_;
-                break;
+                return Carrying(fast.ItemCapacity, fast.Duration_T);
             case SingleItemLane single:
-                // A single item lane is exactly one item spacing long.
-                perItem = single.Duration_T;
-                break;
+                // One item at a time, so its whole traversal is one item.
+                return Carrying(1, single.Duration_T);
             default:
                 return 0f;
         }
+    }
 
-        return perItem.Value > 0 ? 60f / perItem.FloatSeconds : 0f;
+    private static float Carrying(int capacity, Ticks traversal)
+    {
+        float seconds = traversal.FloatSeconds;
+
+        return capacity > 0 && seconds > 0f ? capacity * 60f / seconds : 0f;
     }
 
     /// <summary>
