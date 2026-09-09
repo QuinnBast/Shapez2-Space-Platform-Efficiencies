@@ -879,36 +879,25 @@ public class EfficiencyTracker : IDisposable
         float total = 0f;
         for (int i = 0; i < lanes.Length; i++)
         {
-            total += Occupancy(lanes[i]);
+            total += Backed(lanes[i]);
         }
 
         return total / lanes.Length;
     }
 
-    private static float Occupancy(IItemLane lane)
+    /// <summary>
+    /// Whether a lane has no room left to take another item - the same question the lane
+    /// itself answers before accepting one.
+    ///
+    /// This used to be how full the lane was, which was wrong in both directions. A belt
+    /// running flat out is nearly full of items and perfectly healthy, so it read as
+    /// backed up; and a lane whose capacity could not be read counted as backed up the
+    /// moment anything was on it at all, which is what put a pip on half the map. Being
+    /// unable to accept is the only thing that actually means the goods are stuck.
+    /// </summary>
+    private static float Backed(IItemLane lane)
     {
-        int capacity = LaneCapacity(lane);
-        if (capacity <= 0)
-        {
-            return lane.HasItem ? 1f : 0f;
-        }
-
-        return math.saturate(lane.ItemCount / (float)capacity);
-    }
-
-    private static int LaneCapacity(IItemLane lane)
-    {
-        switch (lane)
-        {
-            case BeltPathLane path:
-                return path.Slots.Count;
-            case FastBeltPathLane fast:
-                return fast.ItemCapacity;
-            case SingleItemLane _:
-                return 1;
-            default:
-                return 0;
-        }
+        return lane.FreeStepsAtTheEnd.Value < LaneConstants.ItemSpacing.Value ? 1f : 0f;
     }
 
     private static EfficiencyStatus Classify(Entry entry)
@@ -1150,26 +1139,29 @@ public class EfficiencyTracker : IDisposable
     }
 
     /// <summary>
-    /// What a belt port between two platforms can really pass.
+    /// What a belt port between two platforms can really pass: the belt that feeds it.
     ///
-    /// Its jump lane is eight item-spacings long and runs at four times conveyor speed,
-    /// which by the usual spacing arithmetic comes out as four belts' worth. But the lane
-    /// only ever holds two items - the game caps it with a pre-accept hook we cannot read -
-    /// so the honest ceiling is those two items divided by how long the crossing takes,
-    /// which works out as exactly one belt. Measuring against the lane speed instead made
-    /// a port running flat out read at a quarter of capacity, and a platform's total with
-    /// it.
+    /// Its jump lane runs at a multiple of conveyor speed, so measuring it by the usual
+    /// spacing arithmetic makes it several belts' worth - and no port can carry more than
+    /// the single belt handing items to it, whatever its own lane could manage. Taking the
+    /// base speed back out of the multiple gives that belt's rate exactly.
+    ///
+    /// Dividing by the crossing time instead, as this used to, was nearly right but not
+    /// quite: the jump is longer for a port reaching further, while the multiplier is
+    /// fixed at the longest reach, so a short hop came out above a belt and a port running
+    /// flat out read in the high eighties.
     /// </summary>
     private static float JumpLaneRate(ISimulation simulation)
     {
-        if (!(simulation is BeltPortTransferSimulation port))
+        if (!(simulation is BeltPortTransferSimulation port)
+            || !(port.JumpLane.BeltSpeed is MultipleBeltSpeed jump))
         {
             return 0f;
         }
 
-        float crossing = port.JumpLane.Duration_T.FloatSeconds;
+        Ticks perItem = LaneConstants.ItemSpacing / jump.BaseSpeed.StepsPerTick;
 
-        return crossing > 0f ? BeltPortSystem.NumJumpLaneItems * 60f / crossing : 0f;
+        return perItem.Value > 0 ? 60f / perItem.FloatSeconds : 0f;
     }
 
     /// <summary>Items per minute the building definition says this can process.</summary>
