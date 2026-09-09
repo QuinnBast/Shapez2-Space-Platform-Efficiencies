@@ -88,9 +88,15 @@ public class PlatformEfficiencyMod : IMod
     {
         try
         {
-            Panels.BindSession(
-                orchestrator.DependencyContainer.Resolve<ISimulationSpeedsProvider>(),
-                orchestrator.GetBeltBuildingSpeedId());
+            ISimulationSpeedsProvider speeds =
+                orchestrator.DependencyContainer.Resolve<ISimulationSpeedsProvider>();
+            ResearchSpeedId buildingSpeed = orchestrator.GetBeltBuildingSpeedId();
+
+            Panels.BindSession(speeds, buildingSpeed);
+
+            // The tracker needs them too: a ceiling from a definition is the rate before
+            // research, and every percentage is measured against it.
+            Tracker.BindSpeeds(speeds, buildingSpeed);
         }
         catch (Exception exception)
         {

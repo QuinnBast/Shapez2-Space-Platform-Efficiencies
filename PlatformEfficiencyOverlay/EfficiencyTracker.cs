@@ -236,6 +236,11 @@ public class EfficiencyTracker : IDisposable
     private IMapModel Map;
     private ISimulator Simulator;
 
+    /// The research speeds, which scale every ceiling that comes from a definition.
+    private ISimulationSpeedsProvider Speeds;
+    private ResearchSpeedId BuildingSpeedId;
+    private int LastSpeedValue = -1;
+
     /// How many times a map has been picked up, and how many times every history has been
     /// rolled forward. Both are only here to be reported: an empty graph is either nothing
     /// happening or nothing being recorded, and these separate the two.
@@ -749,6 +754,13 @@ public class EfficiencyTracker : IDisposable
 
         LastAggregate = now;
 
+        // An upgrade researched mid-session raises what every machine can do, and a
+        // ceiling from before it would read as a machine that had slowed down.
+        if (Speeds != null && Speeds.GetSpeedValue(BuildingSpeedId) != LastSpeedValue)
+        {
+            RefreshDefinitionCeilings();
+        }
+
         foreach (IslandSummary summary in Summaries.Values)
         {
             summary.OutputItemsPerMinute = 0f;
@@ -862,10 +874,12 @@ public class EfficiencyTracker : IDisposable
     /// </summary>
     private static float MeasureSaturation(Entry entry)
     {
-        // A fluid port holds a tank rather than a lane, and its level is the answer.
+        // A fluid port holds a tank rather than a lane. Its level is not the answer: a
+        // buffer drains and refills as packages launch, so half full is what healthy
+        // looks like. Only a tank with no room left is actually holding anything up.
         if (entry.FluidSource != null)
         {
-            return math.saturate(entry.FluidSource.FluidContainer.Level);
+            return entry.FluidSource.FluidContainer.Level >= 0.98f ? 1f : 0f;
         }
 
         // Belts hand the same lane out as input and output; ports keep theirs on the
@@ -886,18 +900,27 @@ public class EfficiencyTracker : IDisposable
     }
 
     /// <summary>
-    /// Whether a lane has no room left to take another item - the same question the lane
-    /// itself answers before accepting one.
+    /// Whether a lane would refuse another item - which is the lane's own test, not a
+    /// guess at one.
     ///
-    /// This used to be how full the lane was, which was wrong in both directions. A belt
-    /// running flat out is nearly full of items and perfectly healthy, so it read as
-    /// backed up; and a lane whose capacity could not be read counted as backed up the
-    /// moment anything was on it at all, which is what put a pip on half the map. Being
-    /// unable to accept is the only thing that actually means the goods are stuck.
+    /// CanAcceptItem comes down to MaxStep_S being negative: the lane cannot advance, so
+    /// nothing can enter it. A single item lane holds exactly one, so anything on it is a
+    /// refusal too.
+    ///
+    /// Two earlier attempts at this were both wrong, in the same direction. Occupancy - how
+    /// full the lane was - made a belt running flat out look backed up, since a flat-out
+    /// belt is nearly full of items; and free space behind the last item is small for most
+    /// of the time on any moving belt, because the last item is near the entrance. Both
+    /// put a pip on half the map.
     /// </summary>
     private static float Backed(IItemLane lane)
     {
-        return lane.FreeStepsAtTheEnd.Value < LaneConstants.ItemSpacing.Value ? 1f : 0f;
+        if (lane.MaxStep_S < Steps.Zero)
+        {
+            return 1f;
+        }
+
+        return lane is SingleItemLane && lane.HasItem ? 1f : 0f;
     }
 
     private static EfficiencyStatus Classify(Entry entry)
@@ -1164,7 +1187,18 @@ public class EfficiencyTracker : IDisposable
         return perItem.Value > 0 ? 60f / perItem.FloatSeconds : 0f;
     }
 
-    /// <summary>Items per minute the building definition says this can process.</summary>
+    /// <summary>
+    /// Items per minute the building definition says this can process, at the research the
+    /// player actually has.
+    ///
+    /// The duration on the definition is the *original* one, before upgrades. The game
+    /// never uses it raw: every stat and the efficiency gauge itself run it through
+    /// StructureStatProcessingTime.ComputeEffectiveDuration, which divides by the research
+    /// speed as a percentage. Dividing measured throughput by the unscaled rate instead
+    /// meant comparing what a machine is doing against what it could do at a research
+    /// level the player does not have - which is why a machine running flat out read in
+    /// the eighties, and why the number moved when nothing about the factory had.
+    /// </summary>
     private float LookupDefinitionRate(ILocalizedSimulation localized)
     {
         if (Map == null
@@ -1178,7 +1212,63 @@ public class EfficiencyTracker : IDisposable
         }
 
         int lanes = efficiency.ProcessingLaneCount > 0 ? efficiency.ProcessingLaneCount : 1;
-        return 60f / efficiency.OriginalProcessingDuration * lanes;
+
+        return 60f / efficiency.OriginalProcessingDuration * lanes * SpeedFactor;
+    }
+
+    /// <summary>
+    /// The research multiplier the game applies to a building's processing duration, or 1
+    /// until the session hands the provider over.
+    /// </summary>
+    private float SpeedFactor
+    {
+        get
+        {
+            if (Speeds == null)
+            {
+                return 1f;
+            }
+
+            float factor = Speeds.GetSpeedValue(BuildingSpeedId) / 100f;
+
+            return factor > 0f ? factor : 1f;
+        }
+    }
+
+    /// <summary>
+    /// Hands over the research speeds, which the definition-based ceilings scale by.
+    /// Anything already registered is recomputed, since registration usually runs first.
+    /// </summary>
+    public void BindSpeeds(ISimulationSpeedsProvider speeds, ResearchSpeedId buildingSpeedId)
+    {
+        Speeds = speeds;
+        BuildingSpeedId = buildingSpeedId;
+        RefreshDefinitionCeilings();
+    }
+
+    /// <summary>
+    /// Recomputes the ceilings that come from a definition. Called when the speeds arrive
+    /// and whenever the research changes - an upgrade mid-session would otherwise leave
+    /// every machine measured against the rate it had before.
+    /// </summary>
+    private void RefreshDefinitionCeilings()
+    {
+        LastSpeedValue = Speeds == null ? 0 : Speeds.GetSpeedValue(BuildingSpeedId);
+
+        foreach (Entry entry in Entries.Values)
+        {
+            if (entry.MaxSource != "definition")
+            {
+                continue;
+            }
+
+            float rate = LookupDefinitionRate(entry.Localized);
+
+            if (rate > 0f)
+            {
+                entry.MaxItemsPerMinute = rate;
+            }
+        }
     }
 
     /// <summary>Items per minute a belt-style lane can carry, from its speed and item spacing.</summary>
