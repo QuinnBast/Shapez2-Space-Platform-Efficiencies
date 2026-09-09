@@ -397,6 +397,62 @@ public class EfficiencyTracker : IDisposable
     }
 
     /// <summary>
+    /// Everything tracked on one platform, by simulation type, with what each kind is
+    /// measured against.
+    ///
+    /// The answer to "why is there no graph on this one": either nothing on it is tracked,
+    /// or nothing on it ships anything off-platform, or what does has no ceiling to be a
+    /// percentage of. Which one it is, is only visible from here.
+    /// </summary>
+    public string DescribeIsland(IslandId island, int top)
+    {
+        Dictionary<string, int> counts = new Dictionary<string, int>();
+        Dictionary<string, string> ceilings = new Dictionary<string, string>();
+        int tracked = 0;
+
+        foreach (Entry entry in Entries.Values)
+        {
+            if (entry.Island != island)
+            {
+                continue;
+            }
+
+            tracked++;
+            string name = entry.Localized.Simulation.GetType().Name;
+
+            counts.TryGetValue(name, out int seen);
+            counts[name] = seen + 1;
+
+            ceilings[name] = entry.MaxItemsPerMinute.ToString("0.#") + "/min from " + entry.MaxSource
+                + (entry.IsOutputPort ? ", port" : entry.IsTransport ? ", transport" : ", machine")
+                + (entry.History != null ? ", history" : "");
+        }
+
+        StringBuilder text = new StringBuilder();
+        text.Append("platform ").Append(island).Append(": ").Append(tracked).Append(" tracked flow(s)");
+
+        if (Summaries.TryGetValue(island, out IslandSummary summary))
+        {
+            text.Append('\n').Append("  ports ")
+                .Append(IslandPorts.TryGetValue(island, out List<Entry> ports) ? ports.Count : 0)
+                .Append(", output ceiling ").Append(summary.HistoryCeiling.ToString("0.#"))
+                .Append("/min, history ").Append(summary.History != null ? "on" : "off");
+        }
+        else
+        {
+            text.Append('\n').Append("  no summary - nothing on it has reported yet");
+        }
+
+        foreach (KeyValuePair<string, int> pair in counts.OrderByDescending(p => p.Value).Take(top))
+        {
+            text.Append('\n').Append("  ").Append(pair.Value.ToString().PadLeft(5))
+                .Append("  ").Append(pair.Key.PadRight(40)).Append(ceilings[pair.Key]);
+        }
+
+        return text.ToString();
+    }
+
+    /// <summary>
     /// The tracked flows by simulation type, commonest first, with how each was classified.
     ///
     /// The transport/machine split alone is coarse: "transport" means "held to lane speed",

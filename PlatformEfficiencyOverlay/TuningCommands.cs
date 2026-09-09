@@ -206,9 +206,30 @@ public class TuningCommands : IConsoleRewirer
         }
 
         Player player = GameHelper.Core?.LocalPlayer;
-        if (player == null || player.InteractionState.BuildingSelection.Count == 0)
+        if (player == null)
         {
-            output("Select one or more buildings first, then run peo.inspect again.");
+            output("No local player.");
+            return;
+        }
+
+        // Some things are selected as a platform rather than as a building - the resource
+        // stations among them - so a "select a building" answer would be a dead end.
+        foreach (IslandModel island in player.InteractionState.IslandSelection)
+        {
+            foreach (string line in Tracker.DescribeIsland(island.Id, 10).Split('\n'))
+            {
+                output(line);
+                Logger.Info?.Log(line);
+            }
+        }
+
+        if (player.InteractionState.BuildingSelection.Count == 0)
+        {
+            if (player.InteractionState.IslandSelection.Count == 0)
+            {
+                output("Select a building or a platform first, then run peo.inspect again.");
+            }
+
             return;
         }
 
