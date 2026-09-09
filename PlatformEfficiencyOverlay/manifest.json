@@ -1,6 +1,6 @@
 {
   "Version": "1.1.0",
-  "Title": "Platform Efficiency Overlay",
+  "Title": "Platform Efficiency Viewer",
   "Description": "Shows measured throughput, bottlenecks and history for every machine, belt and platform",
   "Author": "Quinn Bast",
   "SavedModVersionCompabilityRangeWithSelf": "*-*",

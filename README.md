@@ -1,4 +1,4 @@
-# Platform Efficiency Overlay
+# Platform Efficiency Viewer
 
 See what your factory is actually moving, and where it is stuck — no belt readers required.
 

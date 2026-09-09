@@ -9,7 +9,7 @@ using Game.Core.Simulation;
 using ILogger = Core.Logging.ILogger;
 
 /// <summary>
-/// Platform Efficiency Overlay.
+/// Platform Efficiency Viewer.
 ///
 /// Adds a toggle to the bottom-right visualization bar that washes every machine, belt and
 /// platform in the colour of what it is actually doing - flowing, starved or jammed - with
@@ -81,7 +81,7 @@ public class PlatformEfficiencyMod : IMod
         BuildingPanelHandle = GameRewirers.AddRewirer(new BuildingPanelModules(Tracker));
         CommandsHandle = GameRewirers.AddRewirer(new TuningCommands(logger, Tracker));
 
-        Logger.Info?.Log("Platform Efficiency Overlay ready.");
+        Logger.Info?.Log("Platform Efficiency Viewer ready.");
     }
 
     private void OnSessionReady(GameSessionOrchestrator orchestrator, IslandsModulesLookup lookup)

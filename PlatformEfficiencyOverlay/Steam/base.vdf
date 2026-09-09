@@ -5,8 +5,8 @@
     "contentfolder" "${CONTENT_PATH}"
     "previewfile" "${PREVIEW_IMG}"
     "visibility" "2"
-    "title" "Platform Efficiency Overlay"
-    "description" "[h1]Platform Efficiency Overlay[/h1]
+    "title" "Platform Efficiency Viewer"
+    "description" "[h1]Platform Efficiency Viewer[/h1]
 See if your factory is actually moving, and where it is stuck - no belt readers required.
 
 [h2]The overlay[/h2]
