@@ -17,7 +17,16 @@ using Game.Core.Simulation;
 public class ThroughputMeter
 {
     private const int BucketCount = 13;
-    private const int MinSamples = 3;
+
+    /// Enough arrivals to divide by. Three was too few: a flow at three items a second
+    /// puts fifteen in a bucket and breaks out of the walk immediately, so its rate came
+    /// from one five-second window and moved by a whole item's worth whenever a boundary
+    /// fell between arrivals. Summed over the couple of dozen ports of a platform that is
+    /// several percent of noise, in whichever direction the boundaries happened to land.
+    private const int MinSamples = 20;
+
+    /// And at least this many windows, so a slow flow is not judged on one of them either.
+    private const int MinBuckets = 2;
 
     private static readonly Ticks BucketDuration = Ticks.FromSeconds(5f);
 
@@ -104,7 +113,7 @@ public class ThroughputMeter
             {
                 quietAtTheEnd++;
             }
-            else if (total >= MinSamples)
+            else if (total >= MinSamples && bucketsUsed >= MinBuckets)
             {
                 break;
             }

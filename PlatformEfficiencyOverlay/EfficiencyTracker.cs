@@ -500,14 +500,23 @@ public class EfficiencyTracker : IDisposable
             ceiling += ports[i].MaxItemsPerMinute;
         }
 
-        text.Append(": ").Append(rate.ToString("0.#")).Append(" of ").Append(ceiling.ToString("0.#"))
-            .Append("/min = ").Append(ceiling > 0f ? (rate / ceiling * 100f).ToString("0.#") : "0")
-            .Append('%');
+        // The platform's figure, counted rather than averaged: every item that actually
+        // left, against what the ports could have carried. This is what the chart draws
+        // and what the caption says, so there is one number rather than two.
+        float latest = summary.History == null ? 0f : summary.History.Latest(0);
 
-        text.Append('\n').Append("  history ceiling ").Append(summary.HistoryCeiling.ToString("0.#"))
-            .Append("/min, latest ")
-            .Append(summary.History == null ? "none" : (summary.History.Latest(0) * 100f).ToString("0.#") + "%")
-            .Append(", recorded ")
+        text.Append(": ").Append((latest * summary.HistoryCeiling).ToString("0.#"))
+            .Append(" of ").Append(summary.HistoryCeiling.ToString("0.#"))
+            .Append("/min = ").Append((latest * 100f).ToString("0.#")).Append('%')
+            .Append(summary.History == null ? " (nothing recorded yet)" : "");
+
+        // The same thing from the per-port meters, which is a different route to it: each
+        // port's own rolling window rather than one exact count of the last second. They
+        // should agree closely, and where they do not the windows are the reason.
+        text.Append('\n').Append("  per-port meters say ").Append(rate.ToString("0.#"))
+            .Append(" of ").Append(ceiling.ToString("0.#"))
+            .Append("/min = ").Append(ceiling > 0f ? (rate / ceiling * 100f).ToString("0.#") : "0")
+            .Append("%, recorded ")
             .Append(summary.History == null ? 0 : summary.History.CoveredSeconds(0)).Append('s');
 
         text.Append('\n').Append("  ").Append(ports.Count).Append(" port(s), ")
