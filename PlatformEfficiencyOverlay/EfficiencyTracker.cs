@@ -619,6 +619,12 @@ public class EfficiencyTracker : IDisposable
         IslandPorts.Clear();
         Map = null;
         Simulator = null;
+
+        // Both throttles below are stamps on simulation time, and simulation time starts
+        // over with every save. Leaving them set means the next save inherits a stamp from
+        // a clock that no longer exists.
+        LastKeepWarm = Ticks.Zero;
+        LastAggregate = Ticks.Zero;
     }
 
     public void Dispose()
@@ -639,7 +645,12 @@ public class EfficiencyTracker : IDisposable
         }
 
         Ticks now = Simulator.SimulationTime;
-        if (now.Value - LastKeepWarm.Value < KeepWarmInterval.Value)
+
+        // A backwards clock has to roll rather than wait. The stamp is meant to be in the
+        // past; if it is in the future the save has changed underneath us, and waiting for
+        // simulation time to catch up would mean waiting hours.
+        long sinceWarm = now.Value - LastKeepWarm.Value;
+        if (sinceWarm >= 0 && sinceWarm < KeepWarmInterval.Value)
         {
             return;
         }
@@ -718,7 +729,9 @@ public class EfficiencyTracker : IDisposable
         }
 
         Ticks now = Simulator.SimulationTime;
-        if (now.Value - LastAggregate.Value < AggregateInterval.Value)
+
+        long sinceAggregate = now.Value - LastAggregate.Value;
+        if (sinceAggregate >= 0 && sinceAggregate < AggregateInterval.Value)
         {
             return;
         }

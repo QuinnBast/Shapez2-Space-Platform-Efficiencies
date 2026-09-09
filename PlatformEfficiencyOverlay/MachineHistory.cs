@@ -80,6 +80,15 @@ public sealed class MachineHistory
         {
             Counting[range] += (uint)produced;
 
+            // The clock has gone backwards, which means a different save. Start again here
+            // rather than sitting out the difference.
+            if (nowSeconds < OpenedAt[range])
+            {
+                OpenedAt[range] = nowSeconds;
+                Counting[range] = 0;
+                continue;
+            }
+
             float span = BucketSeconds[range];
             int closed = 0;
 
