@@ -699,18 +699,18 @@ public class EfficiencyTracker : IDisposable
     /// Receiving ports are deliberately not included: they are the platform's input.
     /// </summary>
     /// <summary>
-    /// What actually ships goods off a platform.
+    /// What ships goods off a platform.
     ///
-    /// Senders only, and deliberately not BeltPortTransferSimulation. That one is the jump
-    /// lane inside a port, and every item leaving through a space belt port crosses it
-    /// before reaching the sender - so counting both counted every item twice. Worse, the
-    /// same simulation serves the inbound direction, so a platform's "output" total was
-    /// picking up everything being delivered to it as well. Between them, that is how a
-    /// platform managed to report more than 100% of what it could ship.
+    /// Both types, because they belong to two different port systems rather than to two
+    /// halves of one. SpaceBeltPortSenderSimulation launches onto a space belt;
+    /// BeltPortTransferSimulation is the jump between two platforms sitting side by side,
+    /// and a base wired up mostly that way has almost no senders at all - so counting only
+    /// senders leaves most platforms with no measurable output and no history.
     /// </summary>
     private static bool IsOutputPortSimulation(ISimulation simulation)
     {
-        return simulation is SpaceBeltPortSenderSimulation;
+        return simulation is SpaceBeltPortSenderSimulation
+            || simulation is BeltPortTransferSimulation;
     }
 
     private IslandSummary GetOrCreateSummary(IslandId island)

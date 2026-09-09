@@ -111,6 +111,8 @@ public class TuningCommands : IConsoleRewirer
 
         Register(console, "history", null, History);
 
+        Register(console, "ports", null, Ports);
+
         Register(console, "panel-scroll", new DebugConsole.BoolOption("enabled"), context =>
         {
             OverlayTuning.PanelScrolling = context.GetBool(0);
@@ -378,6 +380,68 @@ public class TuningCommands : IConsoleRewirer
         return seconds < 3600
             ? seconds / 60 + "m"
             : (seconds / 360) / 10f + "h";
+    }
+
+    /// <summary>
+    /// Every port on the selected platform, with what it moved and what it is measured
+    /// against. A platform reading over 100% has to have a port whose ceiling is wrong or
+    /// whose items are being counted somewhere they should not be, and this says which.
+    /// </summary>
+    private void Ports(DebugConsole.CommandContext context)
+    {
+        Action<string> output = context.Output;
+        if (output == null)
+        {
+            return;
+        }
+
+        Player player = GameHelper.Core?.LocalPlayer;
+        if (player == null || player.InteractionState.IslandSelection.Count == 0)
+        {
+            output("Select a platform first, then run peo.ports again.");
+            return;
+        }
+
+        foreach (IslandModel island in player.InteractionState.IslandSelection)
+        {
+            if (!Tracker.TryGetPorts(island.Id, out System.Collections.Generic.List<EfficiencyTracker.Entry> ports))
+            {
+                output("platform " + island.Id + ": no output ports tracked");
+                continue;
+            }
+
+            float rate = 0f;
+            float ceiling = 0f;
+
+            output("platform " + island.Id + ": " + ports.Count + " output port(s)");
+
+            for (int i = 0; i < ports.Count && i < 16; i++)
+            {
+                EfficiencyTracker.Entry port = ports[i];
+                rate += port.ItemsPerMinute;
+                ceiling += port.MaxItemsPerMinute;
+
+                output("  " + port.Localized.Simulation.GetType().Name
+                    + ": " + port.ItemsPerMinute.ToString("0.0") + "/min"
+                    + " of " + port.MaxItemsPerMinute.ToString("0.0")
+                    + " (" + port.MaxSource + ", " + port.MeteredLanes.Length + " lane(s))"
+                    + " = " + (int)(port.Utilization * 100f) + "%");
+            }
+
+            if (ports.Count > 16)
+            {
+                output("  ...and " + (ports.Count - 16) + " more");
+
+                for (int i = 16; i < ports.Count; i++)
+                {
+                    rate += ports[i].ItemsPerMinute;
+                    ceiling += ports[i].MaxItemsPerMinute;
+                }
+            }
+
+            output("  total " + rate.ToString("0.0") + " of " + ceiling.ToString("0.0")
+                + "/min = " + (ceiling > 0f ? (int)(rate / ceiling * 100f) : 0) + "%");
+        }
     }
 
     private string Describe(IMapModel map, BuildingModel building)
