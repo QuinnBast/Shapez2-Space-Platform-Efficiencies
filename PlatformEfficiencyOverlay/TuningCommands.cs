@@ -51,6 +51,13 @@ public class TuningCommands : IConsoleRewirer
                 Report(context);
             });
 
+        Register(console, "belt-zoom", new DebugConsole.FloatOption("zoom", 0f, 20000f),
+            context =>
+            {
+                OverlayTuning.BeltZoom = context.GetFloat(0);
+                Report(context);
+            });
+
         Register(console, "label-zoom", new DebugConsole.FloatOption("zoom", 0f, 1500f),
             context =>
             {

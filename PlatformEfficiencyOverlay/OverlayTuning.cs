@@ -40,6 +40,16 @@ public static class OverlayTuning
     /// </summary>
     public static bool HistoryEnabled = true;
 
+    /// <summary>
+    /// Zoom beyond which belts stop being washed and only machines and ports are.
+    ///
+    /// Belts are four fifths of everything on a big map and each one covers many tiles, so
+    /// they are nearly all of the drawing cost - and zoomed out they are a few pixels wide
+    /// and tell you nothing you cannot read from the machines they feed. Raise it to see
+    /// them further out, lower it if panning stutters.
+    /// </summary>
+    public static float BeltZoom = 260f;
+
     /// <summary>Which window the history readout shows - an index into MachineHistory.RangeNames.</summary>
     public static int HistoryRange;
 
@@ -96,6 +106,7 @@ public static class OverlayTuning
         return "tracking " + (TrackingEnabled ? "on" : "off")
             + " | history " + (HistoryEnabled ? "on" : "off")
             + " | range " + MachineHistory.RangeNames[HistoryRange]
+            + " | belt-zoom " + BeltZoom
             + " | panel-scroll " + (PanelScrolling ? "on" : "off")
             + " | panel-height " + PanelHeightFraction
             + " | pips " + (ShowSaturationPips ? "on" : "off")

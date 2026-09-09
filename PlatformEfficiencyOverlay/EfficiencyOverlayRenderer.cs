@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using Game.Core.Coordinates;
 using Game.Core.Map.Simulation;
@@ -65,6 +65,10 @@ public class EfficiencyOverlayRenderer : IDisposable
     private IMapModel SubscribedMap;
     private int TuningVersion = -1;
     private int Frame;
+
+    /// Rebuilt each frame from the cull result, and reused so it costs no allocation.
+    private readonly HashSet<GlobalChunkCoordinate> VisibleChunks =
+        new HashSet<GlobalChunkCoordinate>();
 
     /// <summary>
     /// How strongly the overlay is showing, 0 to 1. Driven by
@@ -157,6 +161,20 @@ public class EfficiencyOverlayRenderer : IDisposable
         int topLayer = options.MaxBuildingIslandLayer;
         bool singleLayer = topLayer < LayerUnrestricted;
 
+        // Belts are most of the map and most of the drawing, and zoomed out they are a few
+        // pixels wide. Dropping them past a zoom threshold is what keeps panning smooth.
+        bool withBelts = options.Viewport.Zoom < OverlayTuning.BeltZoom;
+
+        // A simulation is registered under every chunk it touches, and a belt path can
+        // cross a dozen of them. Drawing all of its tiles the first time one comes up
+        // meant drawing most of them off screen; this is what they are checked against.
+        VisibleChunks.Clear();
+
+        for (int i = 0; i < cull.Chunks.Count; i++)
+        {
+            VisibleChunks.Add(cull.Chunks[i].Chunk_G);
+        }
+
         for (int i = 0; i < cull.Chunks.Count; i++)
         {
             GlobalChunkCoordinate chunk = cull.Chunks[i].Chunk_G;
@@ -178,6 +196,11 @@ public class EfficiencyOverlayRenderer : IDisposable
 
                 // A belt path spans many chunks - draw it once, on whichever comes up first.
                 if (entry.LastLabelFrame == Frame)
+                {
+                    continue;
+                }
+
+                if (!withBelts && entry.IsTransport && !entry.IsOutputPort)
                 {
                     continue;
                 }
@@ -208,6 +231,14 @@ public class EfficiencyOverlayRenderer : IDisposable
             for (int i = 0; i < tiles.NumOccupiedTiles; i++)
             {
                 GlobalTileCoordinate tile = tiles.GetOccupiedTile(i);
+
+                // Off-screen tiles of an on-screen belt: the instance would be built,
+                // uploaded and then thrown away by the culling.
+                if (!VisibleChunks.Contains(tile.ToChunkCoordinate()))
+                {
+                    continue;
+                }
+
                 renderer.AddWithProperties(tint, material,
                     FastMatrix.TranslateScale(tile.ToCenter_W(OverlayTuning.TintHeight), new float3(1f, 1f, 1f)),
                     TintProperties, PropertyBlockHash.Empty);

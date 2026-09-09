@@ -945,6 +945,16 @@ public class EfficiencyTracker : IDisposable
         }
 
         float fromDefinition = LookupDefinitionRate(localized);
+        float fromJump = JumpLaneRate(localized.Simulation);
+
+        // A belt port states nothing, and its lane lies: the jump runs at several times
+        // conveyor speed, so dividing by item spacing says it could carry several times a
+        // belt. What actually limits it is how many items may be in the air at once.
+        if (fromJump > 0f)
+        {
+            source = "jump-lane";
+            return fromJump;
+        }
 
         // Having no inputs does not make something transport. An extractor is fed by the
         // patch under it rather than by a lane, and its ceiling is how fast it can pull -
@@ -1004,6 +1014,29 @@ public class EfficiencyTracker : IDisposable
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// What a belt port between two platforms can really pass.
+    ///
+    /// Its jump lane is eight item-spacings long and runs at four times conveyor speed,
+    /// which by the usual spacing arithmetic comes out as four belts' worth. But the lane
+    /// only ever holds two items - the game caps it with a pre-accept hook we cannot read -
+    /// so the honest ceiling is those two items divided by how long the crossing takes,
+    /// which works out as exactly one belt. Measuring against the lane speed instead made
+    /// a port running flat out read at a quarter of capacity, and a platform's total with
+    /// it.
+    /// </summary>
+    private static float JumpLaneRate(ISimulation simulation)
+    {
+        if (!(simulation is BeltPortTransferSimulation port))
+        {
+            return 0f;
+        }
+
+        float crossing = port.JumpLane.Duration_T.FloatSeconds;
+
+        return crossing > 0f ? BeltPortSystem.NumJumpLaneItems * 60f / crossing : 0f;
     }
 
     /// <summary>Items per minute the building definition says this can process.</summary>
