@@ -165,7 +165,7 @@ public class TuningCommands : IConsoleRewirer
 
                 shown++;
 
-                foreach (string line in Tracker.Explain(Tracker.FindBusiest(island.Id)).Split('\n'))
+                foreach (string line in Tracker.ExplainIsland(island.Id).Split('\n'))
                 {
                     context.Output?.Invoke(line);
                     Logger.Info?.Log(line);

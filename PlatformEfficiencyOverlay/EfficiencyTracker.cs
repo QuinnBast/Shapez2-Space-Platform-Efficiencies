@@ -416,6 +416,74 @@ public class EfficiencyTracker : IDisposable
     }
 
     /// <summary>
+    /// Every input to a platform's percentage: what the chart is drawn from, port by port.
+    ///
+    /// A platform's number is not any one flow's - it is everything leaving through its
+    /// ports against everything those ports could carry - so this reports that sum and
+    /// the terms of it. Which is the only way to see whether a total that reads low is a
+    /// port measuring low or a port contributing a ceiling and no goods.
+    /// </summary>
+    public string ExplainIsland(IslandId island)
+    {
+        StringBuilder text = new StringBuilder();
+        text.Append("platform ").Append(island);
+
+        if (!Summaries.TryGetValue(island, out IslandSummary summary))
+        {
+            return text.Append(": nothing tracked on it yet").ToString();
+        }
+
+        if (!IslandPorts.TryGetValue(island, out List<Entry> ports))
+        {
+            return text.Append(": no output ports, so no platform total - the panel shows"
+                + " its busiest flow instead").ToString();
+        }
+
+        long items = 0;
+        float rate = 0f;
+        float ceiling = 0f;
+
+        for (int i = 0; i < ports.Count; i++)
+        {
+            items += ports[i].TotalItems;
+            rate += ports[i].ItemsPerMinute;
+            ceiling += ports[i].MaxItemsPerMinute;
+        }
+
+        text.Append(": ").Append(rate.ToString("0.#")).Append(" of ").Append(ceiling.ToString("0.#"))
+            .Append("/min = ").Append(ceiling > 0f ? (rate / ceiling * 100f).ToString("0.#") : "0")
+            .Append('%');
+
+        text.Append('\n').Append("  history ceiling ").Append(summary.HistoryCeiling.ToString("0.#"))
+            .Append("/min, latest ")
+            .Append(summary.History == null ? "none" : (summary.History.Latest(0) * 100f).ToString("0.#") + "%")
+            .Append(", recorded ")
+            .Append(summary.History == null ? 0 : summary.History.CoveredSeconds(0)).Append('s');
+
+        text.Append('\n').Append("  ").Append(ports.Count).Append(" port(s), ")
+            .Append(items).Append(" item(s) since tracking began");
+
+        for (int i = 0; i < ports.Count && i < 12; i++)
+        {
+            Entry port = ports[i];
+
+            text.Append('\n').Append("    ").Append(port.Localized.Simulation.GetType().Name)
+                .Append(": ").Append(port.ItemsPerMinute.ToString("0.#"))
+                .Append(" of ").Append(port.MaxItemsPerMinute.ToString("0.#"))
+                .Append(" (").Append(port.MaxSource).Append(", ")
+                .Append(port.MeteredLanes.Length).Append(" lane(s)) = ")
+                .Append((port.Utilization * 100f).ToString("0.#")).Append('%');
+        }
+
+        if (ports.Count > 12)
+        {
+            text.Append('\n').Append("    ...and ").Append(ports.Count - 12).Append(" more");
+        }
+
+        return text.ToString();
+    }
+
+    /// <summary>
     /// Every input to one flow's percentage and its pip, in the order the arithmetic uses
     /// them. For when a number is wrong and the question is which part of it.
     /// </summary>
