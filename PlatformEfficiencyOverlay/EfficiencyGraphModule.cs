@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using Core.Localization;
 using TMPro;
 using Unity.Core.View;
@@ -30,20 +30,37 @@ public class EfficiencyGraphModule : HUDSidePanelModule
     public class Data : IHUDSidePanelModuleData
     {
         /// Fills the buffer with fractions of capacity, oldest first, returning how many.
+        /// Null for a readout with no history behind it.
         public readonly Func<float[], int> Read;
 
-        /// The rate against the ceiling, for the chart's other corner.
+        /// The rate against the ceiling, for one corner.
         public readonly Func<string> Caption;
 
-        public Data(Func<float[], int> read, Func<string> caption)
+        /// Capacity used right now, for the other corner.
+        public readonly Func<float> Current;
+
+        public Data(Func<float[], int> read, Func<string> caption, Func<float> current)
         {
             Read = read;
             Caption = caption;
+            Current = current;
         }
+
+        /// <summary>
+        /// A rate and a percentage with no chart under them, for the things that are not
+        /// worth a history: a space belt or pipe is one flow of many parallel lanes, and
+        /// what anyone wants from it is whether it is full right now.
+        /// </summary>
+        public static Data Readout(Func<string> caption, Func<float> current)
+        {
+            return new Data(null, caption, current);
+        }
+
+        public bool HasHistory => Read != null;
 
         public PrefabViewReference<HUDSidePanelModule> GetViewPrefabReference()
         {
-            return EfficiencyGraphTemplate.Reference;
+            return HasHistory ? EfficiencyGraphTemplate.Reference : EfficiencyGraphTemplate.ReadoutReference;
         }
     }
 
@@ -59,6 +76,7 @@ public class EfficiencyGraphModule : HUDSidePanelModule
 
     private Func<float[], int> Source;
     private Func<string> Caption;
+    private Func<float> Current;
     private readonly float[] Series = new float[MachineHistory.Buckets + 1];
     private float NextRefresh;
     private bool FontResolved;
@@ -80,6 +98,7 @@ public class EfficiencyGraphModule : HUDSidePanelModule
 
         Source = data.Read;
         Caption = data.Caption;
+        Current = data.Current;
         NextRefresh = 0f;
         Latest = this;
 
@@ -137,6 +156,15 @@ public class EfficiencyGraphModule : HUDSidePanelModule
         }
 
         DrawBars(count, bucketSeconds);
+
+        if (Source == null)
+        {
+            // No history behind this one, so the corner shows the moment instead of an
+            // average over a window that was never recorded.
+            DrawReadout();
+            return;
+        }
+
         DrawSummary(count > 0 ? total / count : 0f, peak, count > 0);
     }
 
@@ -219,29 +247,32 @@ public class EfficiencyGraphModule : HUDSidePanelModule
     /// The average across the window, in the corner of the chart - directly under the
     /// range selector, which is the one number the chart itself cannot show.
     /// </summary>
+    private void DrawReadout()
+    {
+        float current = 0f;
+
+        try
+        {
+            current = Current != null ? Current() : 0f;
+        }
+        catch (Exception exception)
+        {
+            Logger?.Exception?.LogException(exception);
+        }
+
+        ResolveFont();
+
+        if (UISummary != null)
+        {
+            UISummary.text = "now " + Percent(current);
+        }
+
+        DrawCaption();
+    }
+
     private void DrawSummary(float average, float peak, bool any)
     {
-        if (!FontResolved)
-        {
-            FontResolved = true;
-
-            // Borrowed from the panel around us: a mod has no font asset of its own, and a
-            // TextMeshPro label with no font draws nothing at all.
-            TMP_FontAsset font = EfficiencyGraphTemplate.FindFont(transform);
-
-            if (font != null)
-            {
-                if (UISummary != null)
-                {
-                    UISummary.font = font;
-                }
-
-                if (UICaption != null)
-                {
-                    UICaption.font = font;
-                }
-            }
-        }
+        ResolveFont();
 
         if (UISummary != null)
         {
@@ -250,21 +281,59 @@ public class EfficiencyGraphModule : HUDSidePanelModule
                 : "recording...";
         }
 
+        DrawCaption();
+    }
+
+    /// <summary>
+    /// Borrowed from the panel around us: a mod has no font asset of its own, and a
+    /// TextMeshPro label with no font draws nothing at all.
+    /// </summary>
+    private void ResolveFont()
+    {
+        if (FontResolved)
+        {
+            return;
+        }
+
+        FontResolved = true;
+
+        TMP_FontAsset font = EfficiencyGraphTemplate.FindFont(transform);
+
+        if (font == null)
+        {
+            return;
+        }
+
+        if (UISummary != null)
+        {
+            UISummary.font = font;
+        }
+
         if (UICaption != null)
         {
-            string caption = null;
-
-            try
-            {
-                caption = Caption != null ? Caption() : null;
-            }
-            catch (Exception exception)
-            {
-                Logger?.Exception?.LogException(exception);
-            }
-
-            UICaption.text = caption ?? string.Empty;
+            UICaption.font = font;
         }
+    }
+
+    private void DrawCaption()
+    {
+        if (UICaption == null)
+        {
+            return;
+        }
+
+        string caption = null;
+
+        try
+        {
+            caption = Caption != null ? Caption() : null;
+        }
+        catch (Exception exception)
+        {
+            Logger?.Exception?.LogException(exception);
+        }
+
+        UICaption.text = caption ?? string.Empty;
     }
 
     private static string Percent(float fraction)
@@ -313,9 +382,13 @@ internal static class EfficiencyGraphTemplate
 
     private static GameObject Holder;
     private static EfficiencyGraphModule Prefab;
+    private static EfficiencyGraphModule ReadoutPrefab;
 
     public static PrefabViewReference<HUDSidePanelModule> Reference =>
-        new PrefabViewReference<HUDSidePanelModule>(Ensure());
+        new PrefabViewReference<HUDSidePanelModule>(Ensure(BarCount, ChartHeight, ref Prefab));
+
+    public static PrefabViewReference<HUDSidePanelModule> ReadoutReference =>
+        new PrefabViewReference<HUDSidePanelModule>(Ensure(0, 20f, ref ReadoutPrefab));
 
     /// <summary>
     /// The fade on the i-th bar, oldest first - lifted from the game's statistics chart so
@@ -366,18 +439,22 @@ internal static class EfficiencyGraphTemplate
 
         Holder = null;
         Prefab = null;
+        ReadoutPrefab = null;
     }
 
-    private static EfficiencyGraphModule Ensure()
+    private static EfficiencyGraphModule Ensure(int bars, float height, ref EfficiencyGraphModule cached)
     {
-        if (Prefab != null)
+        if (cached != null)
         {
-            return Prefab;
+            return cached;
         }
 
-        Holder = new GameObject("PlatformEfficiencyOverlay.Templates");
-        Holder.SetActive(false);
-        UnityEngine.Object.DontDestroyOnLoad(Holder);
+        if (Holder == null)
+        {
+            Holder = new GameObject("PlatformEfficiencyOverlay.Templates");
+            Holder.SetActive(false);
+            UnityEngine.Object.DontDestroyOnLoad(Holder);
+        }
 
         GameObject module = new GameObject("EfficiencyGraph", typeof(RectTransform));
         module.transform.SetParent(Holder.transform, worldPositionStays: false);
@@ -386,25 +463,25 @@ internal static class EfficiencyGraphTemplate
         rect.anchorMin = new Vector2(0f, 1f);
         rect.anchorMax = new Vector2(1f, 1f);
         rect.pivot = new Vector2(0.5f, 1f);
-        rect.sizeDelta = new Vector2(0f, ChartHeight);
+        rect.sizeDelta = new Vector2(0f, height);
 
         // The panel stacks its modules with a layout group, which sizes them from this.
         LayoutElement layout = module.AddComponent<LayoutElement>();
-        layout.minHeight = ChartHeight;
-        layout.preferredHeight = ChartHeight;
+        layout.minHeight = height;
+        layout.preferredHeight = height;
         layout.flexibleWidth = 1f;
 
         EfficiencyGraphModule graph = module.AddComponent<EfficiencyGraphModule>();
-        RawImage[] bars = new RawImage[BarCount];
-        HUDTooltipTarget[] tips = new HUDTooltipTarget[BarCount];
+        RawImage[] barImages = new RawImage[bars];
+        HUDTooltipTarget[] tips = new HUDTooltipTarget[bars];
 
-        for (int i = 0; i < BarCount; i++)
+        for (int i = 0; i < bars; i++)
         {
             GameObject bar = new GameObject("Bar" + i, typeof(RectTransform));
             bar.transform.SetParent(module.transform, worldPositionStays: false);
 
             RectTransform barRect = (RectTransform)bar.transform;
-            float step = 1f / BarCount;
+            float step = 1f / bars;
 
             // Anchored across a slice of the width so the chart follows the panel, and
             // pinned to the bottom so scaling a bar grows it upwards.
@@ -412,7 +489,7 @@ internal static class EfficiencyGraphTemplate
             barRect.anchorMax = new Vector2((i + 1) * step, 0f);
             barRect.pivot = new Vector2(0.5f, 0f);
             barRect.offsetMin = new Vector2(0.5f, 0f);
-            barRect.offsetMax = new Vector2(-0.5f, ChartHeight);
+            barRect.offsetMax = new Vector2(-0.5f, height);
 
             // A RawImage with no texture draws a plain white quad, which is all a bar is.
             // Image would need a sprite asset, and a mod has no way to author one.
@@ -424,20 +501,20 @@ internal static class EfficiencyGraphTemplate
             tip.TooltipDistance = 70f;
 
             bar.transform.localScale = new Vector3(1f, 0f, 1f);
-            bars[i] = image;
+            barImages[i] = image;
             tips[i] = tip;
         }
 
-        graph.UIBars = bars;
+        graph.UIBars = barImages;
         graph.UITips = tips;
 
         // Both labels are added last so they draw over the bars rather than behind them.
         graph.UICaption = BuildLabel(module.transform, "Caption", TextAlignmentOptions.TopLeft);
         graph.UISummary = BuildLabel(module.transform, "Summary", TextAlignmentOptions.TopRight);
 
-        Prefab = graph;
+        cached = graph;
 
-        return Prefab;
+        return cached;
     }
 
     private static TextMeshProUGUI BuildLabel(Transform parent, string name, TextAlignmentOptions alignment)

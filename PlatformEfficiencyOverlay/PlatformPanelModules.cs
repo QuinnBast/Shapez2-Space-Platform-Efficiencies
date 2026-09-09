@@ -177,13 +177,16 @@ public class PlatformPanelModules : IIslandModulesRewirer
             // No gauge for a platform that has ports: its total comes from all of them at
             // once, which is the one case the game's gauge cannot measure. The chart's own
             // caption carries the rate instead.
+            // A space belt or pipe has no ports of its own: what it has is one flow over
+            // many lanes, and the useful question is whether it is full right now. No
+            // history for those - there are a great many of them and a chart of a belt
+            // says nothing a chart of the machine feeding it does not.
             if (!summary.HasPorts)
             {
-                IHUDSidePanelModuleData gauge = Owner.BuildGauge(Owner.Tracker.FindBusiest(island.Id));
-
-                if (gauge != null)
+                foreach (IHUDSidePanelModuleData module in
+                    HistoryPanelModules.Immediate(Owner.Tracker, Owner.Tracker.FindBusiest(island.Id)))
                 {
-                    yield return gauge;
+                    yield return module;
                 }
             }
 

@@ -33,7 +33,8 @@ internal static class HistoryPanelModules
         // range without the panel being rebuilt.
         yield return new EfficiencyGraphModule.Data(
             buffer => history.Read(OverlayTuning.HistoryRange, ceiling, buffer),
-            () => Caption(tracker, history, ceiling));
+            () => Caption(tracker, history, ceiling),
+            () => history.Latest(0));
     }
 
     /// <summary>
@@ -57,6 +58,32 @@ internal static class HistoryPanelModules
     private static string Rate(float perMinute)
     {
         return perMinute >= 1000f ? perMinute.ToString("#,##0") : perMinute.ToString("0.#");
+    }
+
+    /// <summary>
+    /// A rate and a percentage with no chart, for a flow that keeps no history: space
+    /// belts and space pipes, which are one flow spread over many parallel lanes.
+    ///
+    /// Measured off the meter rather than off the entry's cached rate, because the cached
+    /// one is only recomputed while the overlay is on screen and this has to read true
+    /// with the overlay switched off.
+    /// </summary>
+    public static IEnumerable<IHUDSidePanelModuleData> Immediate(EfficiencyTracker tracker,
+        EfficiencyTracker.Entry entry)
+    {
+        if (entry == null || !entry.HasKnownCeiling)
+        {
+            yield break;
+        }
+
+        yield return EfficiencyGraphModule.Data.Readout(
+            () => Rate(Measured(tracker, entry)) + " of " + Rate(entry.MaxItemsPerMinute) + " per min",
+            () => Measured(tracker, entry) / entry.MaxItemsPerMinute);
+    }
+
+    private static float Measured(EfficiencyTracker tracker, EfficiencyTracker.Entry entry)
+    {
+        return entry.Meter.ItemsPerMinute(tracker.SimulationTicks);
     }
 
     private static IText[] BuildRangeTexts()

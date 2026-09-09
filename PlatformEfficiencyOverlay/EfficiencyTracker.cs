@@ -252,6 +252,9 @@ public class EfficiencyTracker : IDisposable
     /// <summary>Simulated seconds, which is the clock every history is kept on.</summary>
     public float SimulationSeconds => Simulator == null ? 0f : Simulator.SimulationTime.FloatSeconds;
 
+    /// <summary>The same clock, for the meters, which count in ticks.</summary>
+    public Ticks SimulationTicks => Simulator == null ? Ticks.Zero : Simulator.SimulationTime;
+
     /// <summary>True while the initial sweep of the map is still being drained.</summary>
     public bool RegistrationPending => Pending != null;
 
