@@ -116,7 +116,7 @@ public class TuningCommands : IConsoleRewirer
         {
             // The console prints one line per call, so split the report up - and mirror it
             // into the log, because in-game console text cannot be selected or copied.
-            foreach (string line in Tracker.DescribeTypes(20).Split('\n'))
+            foreach (string line in Tracker.DescribeTypes(int.MaxValue).Split('\n'))
             {
                 string trimmed = line.TrimEnd('\r');
                 context.Output?.Invoke(trimmed);
