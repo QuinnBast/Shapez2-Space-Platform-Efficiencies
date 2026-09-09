@@ -134,6 +134,16 @@
             <Private>False</Private>
         </Reference>
 
+        <Reference Include="UnityEngine.UIModule">
+            <HintPath>$(SPZ2_PATH)\UnityEngine.UIModule.dll</HintPath>
+            <Private>False</Private>
+        </Reference>
+
+        <Reference Include="Unity.TextMeshPro">
+            <HintPath>$(SPZ2_PATH)\Unity.TextMeshPro.dll</HintPath>
+            <Private>False</Private>
+        </Reference>
+
         <Reference Include="UnityEngine.UI">
             <HintPath>$(SPZ2_PATH)\UnityEngine.UI.dll</HintPath>
             <Private>False</Private>

@@ -40,8 +40,17 @@ public static class OverlayTuning
     /// </summary>
     public static bool HistoryEnabled = true;
 
-    /// <summary>Which window the history readout shows: 0 = 5m, 1 = 30m, 2 = 1h, 3 = 6h.</summary>
+    /// <summary>Which window the history readout shows - an index into MachineHistory.RangeNames.</summary>
     public static int HistoryRange;
+
+    /// <summary>
+    /// Cap the side panel's content and let it scroll instead of running off the bottom of
+    /// the screen. Off means the vanilla behaviour: the panel grows without limit.
+    /// </summary>
+    public static bool PanelScrolling = true;
+
+    /// <summary>How much of the screen height the panel's content may take up.</summary>
+    public static float PanelHeightFraction = 0.62f;
 
     /// <summary>
     /// Draw the measured number on each machine. Off by default: the labels are drawn by
@@ -87,6 +96,8 @@ public static class OverlayTuning
         return "tracking " + (TrackingEnabled ? "on" : "off")
             + " | history " + (HistoryEnabled ? "on" : "off")
             + " | range " + MachineHistory.RangeNames[HistoryRange]
+            + " | panel-scroll " + (PanelScrolling ? "on" : "off")
+            + " | panel-height " + PanelHeightFraction
             + " | pips " + (ShowSaturationPips ? "on" : "off")
             + " | saturation-threshold " + SaturationThreshold
             + " | platform-labels " + (ShowPlatformLabels ? "on" : "off")

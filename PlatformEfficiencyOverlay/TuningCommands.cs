@@ -111,6 +111,31 @@ public class TuningCommands : IConsoleRewirer
 
         Register(console, "history", null, History);
 
+        Register(console, "panel-scroll", new DebugConsole.BoolOption("enabled"), context =>
+        {
+            OverlayTuning.PanelScrolling = context.GetBool(0);
+            Report(context);
+            context.Output?.Invoke("Reselect to rebuild the panel.");
+        });
+
+        Register(console, "panel-height", new DebugConsole.FloatOption("fraction", 0.2f, 1f), context =>
+        {
+            OverlayTuning.PanelHeightFraction = context.GetFloat(0);
+            Report(context);
+        });
+
+        // What the live panel's layout actually is, since the prefab cannot be opened.
+        Register(console, "panel-info", null, context =>
+        {
+            EfficiencyGraphModule graph = EfficiencyGraphModule.Latest;
+
+            foreach (string line in PanelScrolling.Describe(graph == null ? null : graph.transform).Split('\n'))
+            {
+                context.Output?.Invoke(line);
+                Logger.Info?.Log(line);
+            }
+        });
+
         Register(console, "range", new DebugConsole.StringOption("5m|30m|1h|6h"), context =>
         {
             string wanted = context.GetString(0);

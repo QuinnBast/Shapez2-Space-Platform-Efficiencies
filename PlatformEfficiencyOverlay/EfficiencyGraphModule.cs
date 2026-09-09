@@ -1,11 +1,14 @@
 using System;
+using Core.Localization;
+using TMPro;
 using Unity.Core.View;
 using UnityEngine;
 using UnityEngine.UI;
 
 /// <summary>
 /// A side panel module drawing capacity used over time as a bar chart, in the style of the
-/// game's own statistics charts: one bar per bucket, oldest at the left, older bars faded.
+/// game's own statistics charts: one bar per bucket, oldest at the left, older bars faded,
+/// each one hoverable for the exact figure.
 ///
 /// The game's chart widget cannot be borrowed - it lives inside the statistics screen's
 /// prefab, and a side panel module has to *be* a prefab of its own. So this builds one at
@@ -40,16 +43,26 @@ public class EfficiencyGraphModule : HUDSidePanelModule
         }
     }
 
-    /// Public so Unity serialises it, which is what makes Instantiate remap these to the
-    /// copies instead of leaving them pointing at the template's own bars.
+    /// <summary>The most recently built chart, for the panel diagnostics command.</summary>
+    public static EfficiencyGraphModule Latest { get; private set; }
+
+    /// Public so Unity serialises them, which is what makes Instantiate remap these to the
+    /// copies instead of leaving them pointing at the template's own children.
     public RawImage[] UIBars = Array.Empty<RawImage>();
+    public HUDTooltipTarget[] UITips = Array.Empty<HUDTooltipTarget>();
+    public TextMeshProUGUI UISummary;
 
     private Func<float[], int> Source;
     private readonly float[] Series = new float[MachineHistory.Buckets + 1];
     private float NextRefresh;
+    private bool FontResolved;
 
     public override void OnDispose()
     {
+        if (ReferenceEquals(Latest, this))
+        {
+            Latest = null;
+        }
     }
 
     public override void InitFromData(IHUDSidePanelModuleData rawData)
@@ -61,12 +74,20 @@ public class EfficiencyGraphModule : HUDSidePanelModule
 
         Source = data.Read;
         NextRefresh = 0f;
+        Latest = this;
+
         Refresh();
     }
 
     public override void OnUpdate(InputDownstreamContext context)
     {
         base.OnUpdate(context);
+
+        // The panel grows to fit its modules with nothing stopping it running off the
+        // bottom of the screen, and a chart is exactly what tips a long one over. Checked
+        // every frame rather than once, because the content's height is not final until
+        // the layout has run and modules resize as their numbers change.
+        PanelScrolling.Apply(transform.parent as RectTransform, Logger);
 
         // Four times a second. The finest range has one-second buckets, so anything faster
         // just redraws the same bars.
@@ -93,9 +114,31 @@ public class EfficiencyGraphModule : HUDSidePanelModule
             Logger?.Exception?.LogException(exception);
         }
 
+        int range = OverlayTuning.HistoryRange;
+        int bucketSeconds = MachineHistory.BucketSeconds[range];
+        float total = 0f;
+        float peak = 0f;
+
+        for (int i = 0; i < count; i++)
+        {
+            total += Series[i];
+
+            if (Series[i] > peak)
+            {
+                peak = Series[i];
+            }
+        }
+
+        DrawBars(count, bucketSeconds);
+        DrawSummary(count > 0 ? total / count : 0f, peak, count > 0);
+    }
+
+    private void DrawBars(int count, int bucketSeconds)
+    {
         for (int i = 0; i < UIBars.Length; i++)
         {
             RawImage bar = UIBars[i];
+
             if (bar == null)
             {
                 continue;
@@ -105,26 +148,120 @@ public class EfficiencyGraphModule : HUDSidePanelModule
             // tip is always in the same place.
             int sample = count - UIBars.Length + i;
             bool recorded = sample >= 0 && sample < count;
-            float fraction = recorded ? Series[sample] : 0f;
 
             if (!recorded)
             {
                 // Nothing was recorded that long ago. Leave the slot empty rather than
                 // drawing a zero bar, so "no data yet" does not read as "stopped".
                 bar.transform.localScale = new Vector3(1f, 0f, 1f);
+                bar.raycastTarget = false;
+                SetTip(i, null, null);
                 continue;
             }
 
+            float fraction = Series[sample];
             float height = fraction > 1f ? 1f : fraction;
 
             // A floor, so a stopped machine is still a visible line rather than a gap -
             // the same thing the game's charts do for an empty bucket.
-            bar.transform.localScale = new Vector3(1f, height < 0.02f ? 0.02f : height, 1f);
+            float scale = height < 0.02f ? 0.02f : height;
+
+            bar.transform.localScale = new Vector3(1f, scale, 1f);
 
             Color colour = EfficiencyOverlayRenderer.Gradient(fraction);
             colour.a = EfficiencyGraphTemplate.BarAlpha(i, UIBars.Length);
             bar.color = colour;
+
+            // The bar is squashed by its own scale, so its hit area is squashed too. This
+            // stretches it back over the full column height, which is what makes a bar at
+            // 3% hoverable at all - the same correction the game's own chart applies.
+            bar.raycastTarget = true;
+            bar.raycastPadding = new Vector4(
+                -1f, -4f, -1f, -4f - (1f - scale) * EfficiencyGraphTemplate.ChartHeight / scale);
+
+            SetTip(i, Percent(fraction), Ago(count - 1 - sample, bucketSeconds));
         }
+    }
+
+    private void SetTip(int index, string title, string description)
+    {
+        if (index >= UITips.Length)
+        {
+            return;
+        }
+
+        HUDTooltipTarget tip = UITips[index];
+
+        if (tip == null)
+        {
+            return;
+        }
+
+        if (title == null)
+        {
+            tip.enabled = false;
+            return;
+        }
+
+        tip.enabled = true;
+        tip.Title = new RawText(title);
+        tip.Description = description == null ? null : (IText)new RawText(description);
+    }
+
+    /// <summary>
+    /// The average across the window, in the corner of the chart - directly under the
+    /// range selector, which is the one number the chart itself cannot show.
+    /// </summary>
+    private void DrawSummary(float average, float peak, bool any)
+    {
+        if (UISummary == null)
+        {
+            return;
+        }
+
+        if (!FontResolved)
+        {
+            FontResolved = true;
+
+            TMP_FontAsset font = EfficiencyGraphTemplate.FindFont(transform);
+
+            if (font != null)
+            {
+                UISummary.font = font;
+            }
+        }
+
+        UISummary.text = any
+            ? "avg " + Percent(average) + "   peak " + Percent(peak)
+            : "recording...";
+    }
+
+    private static string Percent(float fraction)
+    {
+        return (int)(fraction * 100f + 0.5f) + "%";
+    }
+
+    /// <summary>How long ago a bucket was, phrased for a tooltip.</summary>
+    private static string Ago(int bucketsBack, int bucketSeconds)
+    {
+        if (bucketsBack <= 0)
+        {
+            return "now";
+        }
+
+        int seconds = bucketsBack * bucketSeconds;
+
+        if (seconds < 60)
+        {
+            return seconds + "s ago";
+        }
+
+        if (seconds < 3600)
+        {
+            return seconds / 60 + "m ago";
+        }
+
+        return (seconds / 360) / 10f + "h ago";
     }
 }
 
@@ -139,7 +276,9 @@ public class EfficiencyGraphModule : HUDSidePanelModule
 internal static class EfficiencyGraphTemplate
 {
     private const int BarCount = MachineHistory.Buckets;
-    private const float ChartHeight = 74f;
+
+    /// <summary>Chart height in canvas units. Also the reach of a bar's hover area.</summary>
+    public const float ChartHeight = 74f;
 
     private static GameObject Holder;
     private static EfficiencyGraphModule Prefab;
@@ -155,6 +294,31 @@ internal static class EfficiencyGraphTemplate
     {
         float t = count <= 1 ? 1f : 0.1f + 0.9f * index / count;
         return Mathf.Pow(t, 2.2f);
+    }
+
+    /// <summary>
+    /// Borrows a font from whatever text is already on screen around us, so the summary
+    /// matches the panel it sits in. A mod has no font asset of its own and no way to
+    /// author one, and a TextMeshPro label without a font draws nothing at all.
+    /// </summary>
+    public static TMP_FontAsset FindFont(Transform from)
+    {
+        Transform current = from;
+
+        while (current != null)
+        {
+            foreach (TMP_Text text in current.GetComponentsInChildren<TMP_Text>(true))
+            {
+                if (text.font != null)
+                {
+                    return text.font;
+                }
+            }
+
+            current = current.parent;
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -201,6 +365,7 @@ internal static class EfficiencyGraphTemplate
 
         EfficiencyGraphModule graph = module.AddComponent<EfficiencyGraphModule>();
         RawImage[] bars = new RawImage[BarCount];
+        HUDTooltipTarget[] tips = new HUDTooltipTarget[BarCount];
 
         for (int i = 0; i < BarCount; i++)
         {
@@ -221,16 +386,45 @@ internal static class EfficiencyGraphTemplate
             // A RawImage with no texture draws a plain white quad, which is all a bar is.
             // Image would need a sprite asset, and a mod has no way to author one.
             RawImage image = bar.AddComponent<RawImage>();
-            image.raycastTarget = false;
             image.color = Color.clear;
+
+            HUDTooltipTarget tip = bar.AddComponent<HUDTooltipTarget>();
+            tip.Alignment = HUDTooltip.TooltipAlignment.Bottom_Center;
+            tip.TooltipDistance = 70f;
 
             bar.transform.localScale = new Vector3(1f, 0f, 1f);
             bars[i] = image;
+            tips[i] = tip;
         }
 
         graph.UIBars = bars;
+        graph.UITips = tips;
+        graph.UISummary = BuildSummary(module.transform);
         Prefab = graph;
 
         return Prefab;
+    }
+
+    private static TextMeshProUGUI BuildSummary(Transform parent)
+    {
+        GameObject label = new GameObject("Summary", typeof(RectTransform));
+
+        // Last child, so it draws over the bars rather than behind them.
+        label.transform.SetParent(parent, worldPositionStays: false);
+
+        RectTransform rect = (RectTransform)label.transform;
+        rect.anchorMin = new Vector2(0f, 1f);
+        rect.anchorMax = new Vector2(1f, 1f);
+        rect.pivot = new Vector2(0.5f, 1f);
+        rect.offsetMin = new Vector2(4f, -18f);
+        rect.offsetMax = new Vector2(-4f, 0f);
+
+        TextMeshProUGUI text = label.AddComponent<TextMeshProUGUI>();
+        text.alignment = TextAlignmentOptions.TopRight;
+        text.fontSize = 13f;
+        text.color = new Color(1f, 1f, 1f, 0.75f);
+        text.raycastTarget = false;
+
+        return text;
     }
 }
