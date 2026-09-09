@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
+using System.Text;
 using Game.Content.Features.SpacePaths;
 using Game.Core.Belts.BeltPath;
 using Game.Core.Coordinates;
@@ -327,6 +329,41 @@ public class EfficiencyTracker : IDisposable
 
         return "  of those: " + machines + " machines, " + transport
             + " belts and space paths, " + ports + " platform ports";
+    }
+
+    /// <summary>
+    /// The tracked flows by simulation type, commonest first, with how each was classified.
+    ///
+    /// The transport/machine split alone is misleading: "machine" only means "not a
+    /// single-lane pass-through", which lumps mergers, splitters, lifts and rails in with
+    /// actual processing buildings. This says what they really are.
+    /// </summary>
+    public string DescribeTypes(int top)
+    {
+        Dictionary<string, int> counts = new Dictionary<string, int>();
+        Dictionary<string, string> kinds = new Dictionary<string, string>();
+
+        foreach (Entry entry in Entries.Values)
+        {
+            string name = entry.Localized.Simulation.GetType().Name;
+
+            counts.TryGetValue(name, out int seen);
+            counts[name] = seen + 1;
+
+            kinds[name] = entry.IsOutputPort ? "port" : entry.IsTransport ? "transport" : "machine";
+        }
+
+        StringBuilder text = new StringBuilder();
+        text.Append(counts.Count).Append(" distinct simulation types tracked");
+
+        foreach (KeyValuePair<string, int> pair in counts.OrderByDescending(p => p.Value).Take(top))
+        {
+            text.Append('\n').Append("  ").Append(pair.Value.ToString().PadLeft(7))
+                .Append("  ").Append(pair.Key.PadRight(46))
+                .Append(kinds[pair.Key]);
+        }
+
+        return text.ToString();
     }
 
     /// <summary>Counts one fluid package leaving a space pipe port.</summary>
