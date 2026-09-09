@@ -2,28 +2,42 @@
 
 See what your factory is actually moving, and where it is stuck — no belt readers required.
 
-Select a platform to get its total output on the game's own efficiency gauge:
-
-![The platform side panel](screenshots/platform-panel-gauge.png)
-
-Or switch on the overlay to colour every machine, belt, space belt and space pipe by how
-hard it is working:
+Switch on the overlay to colour every machine, belt, space belt and space pipe by how hard
+it is working:
 
 ![The overlay in the world](screenshots/overlay-in-world.png)
+
+Select a machine or a platform for what it has been doing over time:
+
+![Efficiency over time](screenshots/EfficiencyOverTime.png)
 
 ## Reading it
 
 **Colour** is how much of its capacity something is using — dark red is stopped, green is
 keeping up.
 
-**A green pip** means it is being fed. That is what tells you which way to walk:
+**A green pip** means goods are stuck there: something is sitting on the way out and
+nothing is leaving. That is what tells you which way to walk:
 
 | | |
 |---|---|
-| dark **with** a pip | fed and still not keeping up — the problem is here or downstream |
+| dark **with** a pip | goods waiting and not moving — the problem is here or downstream |
 | dark, **no** pip | starved — the problem is upstream |
 
-Zoom out and each platform gets a single colour and pip for the whole thing.
+Zoom out and each platform gets a single colour, and a pip when its own ports cannot ship.
+
+## Over time
+
+Selecting a machine or a platform adds a chart of the capacity it has been using, over the
+last **1m, 5m, 30m, 1h or 6h**. Hover a bar for the exact figure and how long ago it was;
+the corner carries the current rate with the average and peak across the window.
+
+Space belts and space pipes get the game's own efficiency gauge instead, measuring the
+whole bundle rather than one lane of it. They keep no history: they outnumber the machines
+several times over and say nothing a chart of the machine feeding them does not.
+
+History costs roughly **35 MB** on a finished factory and is never written to your save.
+`peo.history-enabled false` turns it off.
 
 ## Installing
 
@@ -46,24 +60,52 @@ The debug console (**F1**) has a few knobs, if the defaults do not suit you:
 | | |
 |---|---|
 | `peo.report` | show all current settings |
-| `peo.inspect` | measured rate and capacity for the selected buildings |
+| `peo.range 6h` | which window the charts show |
+| `peo.history-enabled false` | stop keeping history (frees the memory on the next load) |
 | `peo.machine-labels 1` | draw the measured number on each machine |
 | `peo.tint-alpha 0.4` | make the colours more or less opaque |
-| `peo.pips 0` | hide the "it is fed" pips |
+| `peo.belt-zoom 400` | how far out belts keep their colour — lower it if panning stutters |
+| `peo.pips 0` | hide the pips |
+| `peo.panel-scroll false` | let a long side panel run past the bottom of the screen instead of scrolling |
 | `peo.tracking 0` | stop measuring entirely |
+
+## Working out why a number is what it is
+
+Every figure is measured rather than estimated, but a percentage is only ever as good as
+what it is divided by. These print the arithmetic:
+
+| | |
+|---|---|
+| `peo.why` | every input to the selected machine's or platform's number, in order |
+| `peo.inspect` | measured rate, ceiling and where the ceiling came from |
+| `peo.history` | the same buckets the chart draws, as text |
+| `peo.ports` | every port on the selected platform, with what it is measured against |
+| `peo.clock` | whether recording is running, and on what clock |
+| `peo.breakdown` | how many flows are tracked, and what the history is costing |
+
+Everything they print also goes to `Player.log`.
 
 ## Known limits
 
-- Machines with speed research read as pinned at 100%.
-- Fluid moving directly between docked platforms is not measured (space pipes are).
-- On a platform mixing belts and pipes, the gauge's percentage is right but its absolute
-  figure adds items and fluid packages together.
+- A machine's ceiling comes from its building definition scaled by your research. A
+  building whose definition states no processing duration has no ceiling to be a
+  percentage of, so it is measured against belt speed instead and will read low.
+- A port a platform has built but never connected is left out of that platform's total; one
+  that is connected and blocked is kept in, which is the case the number is for.
+- Where a computed ceiling turns out lower than a rate actually achieved — belts compress
+  items closer than their nominal spacing — the best rate seen becomes the ceiling. It does
+  not decay, so a one-off spike leaves that flow reading low until the save is reloaded.
+- The side panel's scrolling is built at runtime over the game's own panel. It has only
+  been tried at one resolution; `peo.panel-scroll false` backs it out.
 
 ## Building it yourself
 
 Set `SPZ2_PATH`, `SPZ2_PERSISTENT` and `SPZ2_SHIFTER` — running the game once with
 `--set-modding-env-vars` does this for you — then `dotnet build`. The output goes straight
 to the mods folder. Restart the game to pick up changes.
+
+`dotnet build -p:Dev=true` stages to `mods-dev` instead of the mods folder, since the
+installed copy is memory-mapped while the game runs and cannot be overwritten.
 
 Built on [Shapez Shifter](https://github.com/tobspr-games/shapez2-shifter) by tobspr Games.
 Licensed under [Apache 2.0](LICENSE).

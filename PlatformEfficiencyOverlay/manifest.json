@@ -1,7 +1,7 @@
 {
-  "Version": "1.0.0",
+  "Version": "1.1.0",
   "Title": "Platform Efficiency Overlay",
-  "Description": "Shows measured throughput and bottlenecks for every machine, belt and platform",
+  "Description": "Shows measured throughput, bottlenecks and history for every machine, belt and platform",
   "Author": "Quinn Bast",
   "SavedModVersionCompabilityRangeWithSelf": "*-*",
   "GameVersionSupportRange": "*-*",
