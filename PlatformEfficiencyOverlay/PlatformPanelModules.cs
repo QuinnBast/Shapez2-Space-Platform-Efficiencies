@@ -109,17 +109,19 @@ public class PlatformPanelModules : IIslandModulesRewirer
     /// considers its capacity, and the two never disagree.
     /// </summary>
     /// <summary>
-    /// The game's gauge, for one flow carried on one real lane.
+    /// The game's gauge, showing our percentage.
     ///
-    /// It derives its rate from the gaps between arrivals on the lane it is handed, so it
-    /// is exact for a single lane and unusable for anything aggregated: a stand-in fed by
-    /// several lanes puts many arrivals in the same simulation tick, and the gaps it
-    /// divides by collapse to nothing. So anything with more than one lane now gets the
-    /// chart's own measured figures, and this is offered only where it is right.
+    /// One real lane is handed over directly: the gauge derives its rate from the gaps
+    /// between arrivals, and a real lane carries the exact sub-tick arrival time, which is
+    /// the best data there is. Several lanes in parallel - a space belt, a space pipe - go
+    /// through a stand-in that is driven from the rate we measured, because relaying their
+    /// arrivals would put many of them in the same tick and collapse the gaps the gauge
+    /// divides by. Either way the ceiling handed over is ours, so the needle reads full at
+    /// the rate this overlay calls capacity.
     /// </summary>
     private IHUDSidePanelModuleData BuildGauge(EfficiencyTracker.Entry entry)
     {
-        if (entry == null || Speeds == null || !entry.HasKnownCeiling || entry.MeteredLanes.Length != 1)
+        if (entry == null || Speeds == null || !entry.HasKnownCeiling || entry.MeteredLanes.Length == 0)
         {
             return null;
         }
@@ -133,10 +135,14 @@ public class PlatformPanelModules : IIslandModulesRewirer
         // The module works out its own 100% mark as baseDuration / (speedValue / 100), so
         // handing it the ceiling we measured multiplied by that same factor makes the two
         // cancel: it then reads full at the rate this overlay calls capacity.
+        IItemLane target = entry.MeteredLanes.Length > 1
+            ? entry.EnsureAggregate()
+            : entry.MeteredLanes[0];
+
         return new HUDSidePanelModuleBuildingEfficiency.Data(
             default(BuildingModel),
             entry.Localized,
-            entry.MeteredLanes[0],
+            target,
             BeltSpeedId,
             60f / entry.MaxItemsPerMinute * speedFactor);
     }
@@ -178,15 +184,27 @@ public class PlatformPanelModules : IIslandModulesRewirer
             // once, which is the one case the game's gauge cannot measure. The chart's own
             // caption carries the rate instead.
             // A space belt or pipe has no ports of its own: what it has is one flow over
-            // many lanes, and the useful question is whether it is full right now. No
-            // history for those - there are a great many of them and a chart of a belt
-            // says nothing a chart of the machine feeding it does not.
+            // many lanes, and the useful question is whether it is full right now - so it
+            // gets the gauge and no chart. There are a great many of them, and a chart of
+            // a belt says nothing a chart of the machine feeding it does not.
             if (!summary.HasPorts)
             {
-                foreach (IHUDSidePanelModuleData module in
-                    HistoryPanelModules.Immediate(Owner.Tracker, Owner.Tracker.FindBusiest(island.Id)))
+                EfficiencyTracker.Entry busiest = Owner.Tracker.FindBusiest(island.Id);
+                IHUDSidePanelModuleData gauge = Owner.BuildGauge(busiest);
+
+                if (gauge != null)
                 {
-                    yield return module;
+                    yield return gauge;
+                }
+                else
+                {
+                    // Nothing with a lane to hook - a space pipe carries fluid in a
+                    // buffer - so the figures go in as text instead.
+                    foreach (IHUDSidePanelModuleData module in
+                        HistoryPanelModules.Immediate(Owner.Tracker, busiest))
+                    {
+                        yield return module;
+                    }
                 }
             }
 

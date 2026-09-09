@@ -72,7 +72,9 @@ public class EfficiencyTracker : IDisposable
         public int LastLabelFrame = -1;
 
         /// Created on demand when the side panel wants a gauge over all of these lanes.
-        private AggregateLane Aggregate;
+        /// Driven from the measured rate rather than from the arrivals themselves - see
+        /// AggregateLane for why relaying them cannot work.
+        public AggregateLane Aggregate;
 
         /// Set for a platform's output ports, so all of them feed one platform-wide gauge.
         public AggregateLane Shared;
@@ -107,9 +109,10 @@ public class EfficiencyTracker : IDisposable
             Meter.CountItem(receiver, item);
             TotalItems++;
 
-            // Ticks.Zero means "arrived now". The gauge averages gaps over a minute, so
-            // quantising to the update it landed in makes no practical difference.
-            Aggregate?.Report(item, Ticks.Zero);
+            // Deliberately not relayed to Aggregate. Several lanes hand over in the same
+            // tick, so every one of those arrivals would carry the same timestamp and the
+            // gaps the gauge averages would collapse. It is driven from the measured rate
+            // instead, once a second, in KeepWarm.
             Shared?.Report(item, Ticks.Zero);
         }
 
@@ -672,6 +675,11 @@ public class EfficiencyTracker : IDisposable
         {
             entry.Meter.Advance(now);
             entry.History?.Advance(seconds, entry.TotalItems, entry.MaxItemsPerMinute);
+
+            // Only ever a handful: an aggregate exists once a panel has asked for a gauge
+            // over one, and it stops driving as soon as that panel closes.
+            entry.Aggregate?.Drive(Simulator, entry.Localized,
+                entry.Meter.ItemsPerMinute(now), now);
         }
 
         AdvancePlatformHistories(seconds);
