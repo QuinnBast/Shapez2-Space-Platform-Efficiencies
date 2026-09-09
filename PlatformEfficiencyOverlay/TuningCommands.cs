@@ -120,6 +120,64 @@ public class TuningCommands : IConsoleRewirer
 
         Register(console, "ports", null, Ports);
 
+        // Everything behind one number, for whatever is selected.
+        Register(console, "why", null, context =>
+        {
+            Player player = GameHelper.Core?.LocalPlayer;
+            IMapModel map = Tracker.TrackedMap;
+
+            if (player == null || map?.Simulator == null)
+            {
+                context.Output?.Invoke("No map is being tracked.");
+                return;
+            }
+
+            int shown = 0;
+
+            foreach (BuildingModel building in player.InteractionState.BuildingSelection)
+            {
+                if (shown >= 3)
+                {
+                    break;
+                }
+
+                if (!map.Simulator.TryFindTileSimulation(building.Tile_G, out ILocalizedTileSimulation localized)
+                    || !Tracker.TryGetEntry(localized, out EfficiencyTracker.Entry entry))
+                {
+                    continue;
+                }
+
+                shown++;
+
+                foreach (string line in Tracker.Explain(entry).Split('\n'))
+                {
+                    context.Output?.Invoke(line);
+                    Logger.Info?.Log(line);
+                }
+            }
+
+            foreach (IslandModel island in player.InteractionState.IslandSelection)
+            {
+                if (shown >= 3)
+                {
+                    break;
+                }
+
+                shown++;
+
+                foreach (string line in Tracker.Explain(Tracker.FindBusiest(island.Id)).Split('\n'))
+                {
+                    context.Output?.Invoke(line);
+                    Logger.Info?.Log(line);
+                }
+            }
+
+            if (shown == 0)
+            {
+                context.Output?.Invoke("Select a building or a platform first.");
+            }
+        });
+
         Register(console, "clock", null, context =>
         {
             foreach (string line in Tracker.DescribeClock().Split('\n'))

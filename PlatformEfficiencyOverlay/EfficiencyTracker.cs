@@ -416,6 +416,78 @@ public class EfficiencyTracker : IDisposable
     }
 
     /// <summary>
+    /// Every input to one flow's percentage and its pip, in the order the arithmetic uses
+    /// them. For when a number is wrong and the question is which part of it.
+    /// </summary>
+    public string Explain(Entry entry)
+    {
+        if (entry == null)
+        {
+            return "not tracked";
+        }
+
+        StringBuilder text = new StringBuilder();
+
+        text.Append(entry.Localized.Simulation.GetType().Name)
+            .Append(": measured ").Append(entry.ItemsPerMinute.ToString("0.##")).Append("/min")
+            .Append(", ceiling ").Append(entry.MaxItemsPerMinute.ToString("0.##"))
+            .Append(" from ").Append(entry.MaxSource)
+            .Append(" -> ").Append((entry.Utilization * 100f).ToString("0.#")).Append('%');
+
+        text.Append('\n').Append("  research speed ")
+            .Append(Speeds == null ? "unbound" : Speeds.GetSpeedValue(BuildingSpeedId).ToString())
+            .Append(", factor ").Append(SpeedFactor.ToString("0.###"));
+
+        if (Map != null
+            && entry.Localized is ILocalizedTileSimulation tiles
+            && tiles.NumOccupiedTiles > 0
+            && Map.TryGetBuilding(tiles.GetOccupiedTile(0), out BuildingModel building))
+        {
+            text.Append('\n').Append("  building ").Append(building.Definition.Id);
+
+            if (building.Definition.CustomData.TryGet(out IBuildingEfficiencyData efficiency))
+            {
+                text.Append(", original duration ").Append(efficiency.OriginalProcessingDuration.ToString("0.###"))
+                    .Append("s over ").Append(efficiency.ProcessingLaneCount).Append(" lane(s)");
+            }
+            else
+            {
+                text.Append(", no efficiency data");
+            }
+        }
+
+        text.Append('\n').Append("  saturation ").Append(entry.Saturation.ToString("0.##"))
+            .Append(entry.IsSaturated ? " (pip shown)" : " (no pip)")
+            .Append(", threshold ").Append(OverlayTuning.SaturationThreshold);
+
+        if (entry.FluidSource != null)
+        {
+            text.Append('\n').Append("  fluid level ")
+                .Append(entry.FluidSource.FluidContainer.Level.ToString("0.###"));
+        }
+
+        Describe(text, "metered", entry.MeteredLanes);
+        Describe(text, "input", entry.InputLanes);
+
+        return text.ToString();
+    }
+
+    private static void Describe(StringBuilder text, string role, IItemLane[] lanes)
+    {
+        for (int i = 0; i < lanes.Length && i < 6; i++)
+        {
+            IItemLane lane = lanes[i];
+
+            text.Append('\n').Append("  ").Append(role).Append(' ').Append(i).Append(": ")
+                .Append(lane.GetType().Name)
+                .Append(", maxStep ").Append(lane.MaxStep_S.Value)
+                .Append(", freeAtEnd ").Append(lane.FreeStepsAtTheEnd.Value)
+                .Append(", items ").Append(lane.ItemCount)
+                .Append(lane.MaxStep_S < Steps.Zero ? ", would refuse" : ", would accept");
+        }
+    }
+
+    /// <summary>
     /// Whether recording is actually happening, and on what clock.
     ///
     /// A graph that stays empty has two quite different causes - nothing is passing through
