@@ -63,8 +63,15 @@ public class EfficiencyTracker : IDisposable
         /// </summary>
         public float Saturation;
 
-        /// Set for space pipe ports, whose backlog is a fluid level rather than a lane.
-        public SpaceFluidPortSenderSimulation FluidSource;
+        /// Set for fluid ports, whose backlog is a container level rather than a lane.
+        public IFluidContainer FluidSource;
+
+        /// What this is to its platform - see PortClassifier.
+        public PortKind Port;
+
+        /// <summary>A port with no counterpart carries nothing, ever, so it is not
+        /// capacity the platform is failing to use.</summary>
+        public bool IsUnconnectedPort => Port == PortKind.Unconnected;
 
         public bool IsSaturated => Saturation >= OverlayTuning.SaturationThreshold;
 
@@ -134,6 +141,12 @@ public class EfficiencyTracker : IDisposable
         {
             get
             {
+                // A port with nothing opposite it is not idle capacity, it is not capacity.
+                if (IsUnconnectedPort)
+                {
+                    return false;
+                }
+
                 if (TotalItems > 0)
                 {
                     return true;
@@ -147,7 +160,7 @@ public class EfficiencyTracker : IDisposable
                     }
                 }
 
-                return FluidSource != null && FluidSource.FluidContainer.Level > 0f;
+                return FluidSource != null && FluidSource.Level > 0f;
             }
         }
 
@@ -515,7 +528,8 @@ public class EfficiencyTracker : IDisposable
                 .Append(" (").Append(port.MaxSource).Append(", ")
                 .Append(port.MeteredLanes.Length).Append(" lane(s)) = ")
                 .Append((port.Utilization * 100f).ToString("0.#")).Append('%')
-                .Append(port.InUse ? "" : ", unused - not counted");
+                .Append(port.IsUnconnectedPort ? ", nothing opposite - not counted"
+                    : port.InUse ? "" : ", unused - not counted");
         }
 
         if (ports.Count > 12)
@@ -567,6 +581,8 @@ public class EfficiencyTracker : IDisposable
             }
         }
 
+        text.Append('\n').Append("  port ").Append(entry.Port);
+
         text.Append('\n').Append("  saturation ").Append(entry.Saturation.ToString("0.##"))
             .Append(entry.IsSaturated ? " (pip shown)" : " (no pip)")
             .Append(", threshold ").Append(OverlayTuning.SaturationThreshold);
@@ -574,7 +590,7 @@ public class EfficiencyTracker : IDisposable
         if (entry.FluidSource != null)
         {
             text.Append('\n').Append("  fluid level ")
-                .Append(entry.FluidSource.FluidContainer.Level.ToString("0.###"));
+                .Append(entry.FluidSource.Level.ToString("0.###"));
         }
 
         Describe(text, "metered", entry.MeteredLanes);
@@ -1075,20 +1091,7 @@ public class EfficiencyTracker : IDisposable
     ///
     /// Receiving ports are deliberately not included: they are the platform's input.
     /// </summary>
-    /// <summary>
-    /// What ships goods off a platform.
-    ///
-    /// Both types, because they belong to two different port systems rather than to two
-    /// halves of one. SpaceBeltPortSenderSimulation launches onto a space belt;
-    /// BeltPortTransferSimulation is the jump between two platforms sitting side by side,
-    /// and a base wired up mostly that way has almost no senders at all - so counting only
-    /// senders leaves most platforms with no measurable output and no history.
-    /// </summary>
-    private static bool IsOutputPortSimulation(ISimulation simulation)
-    {
-        return simulation is SpaceBeltPortSenderSimulation
-            || simulation is BeltPortTransferSimulation;
-    }
+
 
     private IslandSummary GetOrCreateSummary(IslandId island)
     {
@@ -1111,7 +1114,7 @@ public class EfficiencyTracker : IDisposable
         // looks like. Only a tank with no room left is actually holding anything up.
         if (entry.FluidSource != null)
         {
-            return entry.FluidSource.FluidContainer.Level >= 0.98f ? 1f : 0f;
+            return entry.FluidSource.Level >= 0.98f ? 1f : 0f;
         }
 
         return Stuck(entry);
@@ -1180,8 +1183,29 @@ public class EfficiencyTracker : IDisposable
         Collector.Reset();
         CollectLanes(localized.Simulation, Collector);
 
-        SpaceFluidPortSenderSimulation fluidPort = localized.Simulation as SpaceFluidPortSenderSimulation;
-        if (Collector.Metered.Count == 0 && fluidPort == null)
+        // A fluid port has no lane to meter: it fills a container and launches packages
+        // out of it. Both the space kind and the docked kind launch through the same
+        // simulation, which is the one event worth counting.
+        FluidPackageLaunchSimulation launcher = null;
+        IFluidContainer container = null;
+        Ticks launchDuration = Ticks.Zero;
+
+        switch (localized.Simulation)
+        {
+            case SpaceFluidPortSenderSimulation space:
+                launcher = space.LaunchSimulation;
+                container = space.FluidContainer;
+                launchDuration = space.LaunchDuration_T;
+                break;
+
+            case FluidPortTransferSimulation docked:
+                launcher = docked.LaunchSimulation;
+                container = docked.FluidPortSender;
+                launchDuration = docked.LaunchDuration_T;
+                break;
+        }
+
+        if (Collector.Metered.Count == 0 && launcher == null)
         {
             return;
         }
@@ -1210,17 +1234,18 @@ public class EfficiencyTracker : IDisposable
             entry.History = new MachineHistory();
         }
 
-        entry.IsOutputPort = fluidPort != null || IsOutputPortSimulation(localized.Simulation);
+        entry.Port = PortClassifier.Classify(localized, entry.Chunk);
+        entry.IsOutputPort = entry.Port == PortKind.Output;
 
-        if (fluidPort != null)
+        if (launcher != null)
         {
-            entry.FluidSource = fluidPort;
+            entry.FluidSource = container;
 
             // One package per launch duration is all a port can manage.
-            float launchSeconds = fluidPort.LaunchDuration_T.FloatSeconds;
+            float launchSeconds = launchDuration.FloatSeconds;
             entry.MaxItemsPerMinute = launchSeconds > 0f ? 60f / launchSeconds : 0f;
             entry.MaxSource = "launch-rate";
-            FluidPorts[fluidPort.LaunchSimulation] = entry;
+            FluidPorts[launcher] = entry;
         }
 
         if (entry.Island != IslandId.Invalid && entry.IsOutputPort)
