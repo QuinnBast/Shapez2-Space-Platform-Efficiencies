@@ -1,4 +1,4 @@
-/// <summary>
+﻿/// <summary>
 /// The handful of numbers that can only really be judged with the game in front of you.
 /// They live here rather than as constants so the debug console can change them at runtime -
 /// a new mod DLL cannot be loaded without restarting the game, so anything that needs
@@ -32,6 +32,16 @@ public static class OverlayTuning
     /// is the escape hatch if the mod is ever costing more than it is worth on a big save.
     /// </summary>
     public static bool TrackingEnabled = true;
+
+    /// <summary>
+    /// Keep throughput history per machine. About 45 MB on a completed save, and it has to
+    /// be decided before a machine is registered, so turning it off only takes effect for
+    /// flows registered after that - reload the save to reclaim what is already held.
+    /// </summary>
+    public static bool HistoryEnabled = true;
+
+    /// <summary>Which window the history readout shows: 0 = 5m, 1 = 30m, 2 = 1h, 3 = 6h.</summary>
+    public static int HistoryRange;
 
     /// <summary>
     /// Draw the measured number on each machine. Off by default: the labels are drawn by
@@ -75,6 +85,8 @@ public static class OverlayTuning
     public static string Describe()
     {
         return "tracking " + (TrackingEnabled ? "on" : "off")
+            + " | history " + (HistoryEnabled ? "on" : "off")
+            + " | range " + MachineHistory.RangeNames[HistoryRange]
             + " | pips " + (ShowSaturationPips ? "on" : "off")
             + " | saturation-threshold " + SaturationThreshold
             + " | platform-labels " + (ShowPlatformLabels ? "on" : "off")

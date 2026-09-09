@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using Game.Core.Map.Simulation;
 using ShapezShifter.Hijack;
 using ShapezShifter.Kit;
@@ -109,6 +109,32 @@ public class TuningCommands : IConsoleRewirer
 
         Register(console, "inspect", null, Inspect);
 
+        Register(console, "history", null, History);
+
+        Register(console, "range", new DebugConsole.StringOption("5m|30m|1h|6h"), context =>
+        {
+            string wanted = context.GetString(0);
+
+            for (int range = 0; range < MachineHistory.Ranges; range++)
+            {
+                if (string.Equals(MachineHistory.RangeNames[range], wanted, StringComparison.OrdinalIgnoreCase))
+                {
+                    OverlayTuning.HistoryRange = range;
+                    Report(context);
+                    return;
+                }
+            }
+
+            context.Output?.Invoke("Ranges are: " + string.Join(", ", MachineHistory.RangeNames));
+        });
+
+        Register(console, "history-enabled", new DebugConsole.BoolOption("enabled"), context =>
+        {
+            OverlayTuning.HistoryEnabled = context.GetBool(0);
+            Report(context);
+            context.Output?.Invoke("Applies to flows registered from now on - reload the save to apply it to everything.");
+        });
+
         Register(console, "breakdown", null, context =>
             context.Output?.Invoke(Tracker.DescribeComposition()));
 
@@ -164,6 +190,132 @@ public class TuningCommands : IConsoleRewirer
             reported++;
             output(Describe(map, building));
         }
+    }
+
+    /// <summary>
+    /// The selected machine's throughput over the chosen window, as a sparkline.
+    ///
+    /// A crude readout, but it is the honest one: it prints the same buckets the graph
+    /// will draw, so if this looks wrong the data is wrong rather than the drawing.
+    /// </summary>
+    private void History(DebugConsole.CommandContext context)
+    {
+        Action<string> output = context.Output;
+        if (output == null)
+        {
+            return;
+        }
+
+        IMapModel map = Tracker.TrackedMap;
+        if (map == null)
+        {
+            output("No map is being tracked.");
+            return;
+        }
+
+        Player player = GameHelper.Core?.LocalPlayer;
+        if (player == null || player.InteractionState.BuildingSelection.Count == 0)
+        {
+            output("Select a machine first, then run peo.history again.");
+            return;
+        }
+
+        int range = OverlayTuning.HistoryRange;
+        float now = map.Simulator != null ? map.Simulator.SimulationTime.FloatSeconds : 0f;
+        float[] series = new float[MachineHistory.Buckets + 1];
+        int shown = 0;
+
+        foreach (BuildingModel building in player.InteractionState.BuildingSelection)
+        {
+            if (shown >= 4)
+            {
+                output("...more selected than shown.");
+                break;
+            }
+
+            if (!map.Simulator.TryFindTileSimulation(building.Tile_G, out ILocalizedTileSimulation localized)
+                || !Tracker.TryGetEntry(localized, out EfficiencyTracker.Entry entry))
+            {
+                continue;
+            }
+
+            shown++;
+
+            if (entry.History == null)
+            {
+                output(building.Definition.Id + ": no history - only machines measured "
+                    + "against their own stated rate keep one (this one uses " + entry.MaxSource + ")");
+                continue;
+            }
+
+            int count = entry.History.Read(range, now, series);
+            float peak = 0f;
+
+            for (int i = 0; i < count; i++)
+            {
+                if (series[i] > peak)
+                {
+                    peak = series[i];
+                }
+            }
+
+            output(building.Definition.Id + ": " + MachineHistory.RangeNames[range]
+                + ", " + Covered(entry.History.CoveredSeconds(range)) + " recorded"
+                + ", peak " + peak.ToString("0") + "/min"
+                + ", now " + entry.ItemsPerMinute.ToString("0") + "/min"
+                + ", ceiling " + entry.MaxItemsPerMinute.ToString("0") + "/min");
+
+            output("  " + Sparkline(series, count, entry.HasKnownCeiling ? entry.MaxItemsPerMinute : peak));
+        }
+
+        if (shown == 0)
+        {
+            output("Nothing selected is tracked.");
+        }
+    }
+
+    /// Scaled against the ceiling, not against its own peak, so the height means capacity
+    /// used - the same thing the colour wash means - rather than "busy for this machine".
+    private static string Sparkline(float[] series, int count, float ceiling)
+    {
+        if (count <= 0)
+        {
+            return "(nothing recorded yet)";
+        }
+
+        const string Levels = " .:-=+*#%@";
+        char[] line = new char[count];
+
+        for (int i = 0; i < count; i++)
+        {
+            float fraction = ceiling > 0f ? series[i] / ceiling : 0f;
+            int level = (int)(fraction * (Levels.Length - 1) + 0.5f);
+
+            if (level < 0)
+            {
+                level = 0;
+            }
+            else if (level >= Levels.Length)
+            {
+                level = Levels.Length - 1;
+            }
+
+            line[i] = Levels[level];
+        }
+
+        return new string(line);
+    }
+
+    private static string Covered(int seconds)
+    {
+        if (seconds < 60)
+        {
+            return seconds + "s";
+        }
+
+        return seconds < 3600
+            ? seconds / 60 + "m"
+            : (seconds / 360) / 10f + "h";
     }
 
     private string Describe(IMapModel map, BuildingModel building)

@@ -46,6 +46,13 @@ public class EfficiencyTracker : IDisposable
         public float PeakItemsPerMinute;
         public EfficiencyStatus Status;
 
+        /// Everything this has ever handed over, which is what the history samples.
+        public long TotalItems;
+
+        /// Throughput over time. Only processing machines get one - see MachineHistory
+        /// for why the belts are left out.
+        public MachineHistory History;
+
         /// <summary>
         /// How full the lanes feeding this are, smoothed - 0 nothing waiting, 1 backed up.
         ///
@@ -98,6 +105,7 @@ public class EfficiencyTracker : IDisposable
         public void OnItemAccepted(IItemReceiver receiver, IBeltItem item)
         {
             Meter.CountItem(receiver, item);
+            TotalItems++;
 
             // Ticks.Zero means "arrived now". The gauge averages gaps over a minute, so
             // quantising to the update it landed in makes no practical difference.
@@ -204,6 +212,10 @@ public class EfficiencyTracker : IDisposable
 
     /// A fixed count per frame is either slow on a big base or a stall on a small one, so
     /// the sweep is given a slice of frame time instead and adapts to the machine.
+    /// Roughly what one MachineHistory costs: 240 buckets plus its bookkeeping and the
+    /// headers of the four objects it is made of. Only used to report the total.
+    private const int HistoryBytes = 640;
+
     private const long RegistrationBudgetMilliseconds = 3;
     private const int RegistrationBatch = 64;
 
@@ -271,6 +283,24 @@ public class EfficiencyTracker : IDisposable
         return best;
     }
 
+    /// <summary>
+    /// How far the first pass over the map has got, or null once it is done.
+    ///
+    /// Worth saying out loud in the diagnostics: registration is spread over frames, so
+    /// everything reads as empty for the first minute or so of a session - and again for a
+    /// minute after a hot reload, which starts a fresh tracker on an already-running map.
+    /// An empty report is otherwise indistinguishable from a broken one.
+    /// </summary>
+    public string DescribeProgress()
+    {
+        List<ILocalizedSimulation> pending = Pending;
+
+        return pending == null
+            ? null
+            : "still registering: " + PendingIndex + " of " + pending.Count
+                + " simulations - the numbers below are incomplete";
+    }
+
     /// <summary>Starts tracking a map, replacing whatever was tracked before.</summary>
     public void Attach(IMapModel map)
     {
@@ -327,8 +357,23 @@ public class EfficiencyTracker : IDisposable
             }
         }
 
-        return "  of those: " + machines + " processing machines, " + transport
-            + " belts and pass-throughs, " + ports + " platform ports";
+        string progress = DescribeProgress();
+
+        int histories = 0;
+
+        foreach (Entry entry in Entries.Values)
+        {
+            if (entry.History != null)
+            {
+                histories++;
+            }
+        }
+
+        return (progress == null ? "" : "  " + progress + "\n")
+            + "  of those: " + machines + " processing machines, " + transport
+            + " belts and pass-throughs, " + ports + " platform ports\n"
+            + "  history on " + histories + " of them, about "
+            + (histories * HistoryBytes / 1048576f).ToString("0.0") + " MB";
     }
 
     /// <summary>
@@ -354,6 +399,12 @@ public class EfficiencyTracker : IDisposable
         }
 
         StringBuilder text = new StringBuilder();
+        string progress = DescribeProgress();
+        if (progress != null)
+        {
+            text.Append(progress).Append('\n');
+        }
+
         text.Append(counts.Count).Append(" distinct simulation types tracked");
 
         foreach (KeyValuePair<string, int> pair in counts.OrderByDescending(p => p.Value).Take(top))
@@ -468,9 +519,16 @@ public class EfficiencyTracker : IDisposable
 
         LastKeepWarm = now;
 
+        // Deliberately here rather than in Update: this runs whether or not the overlay is
+        // showing, so a graph opened for the first time has real history behind it instead
+        // of starting from the moment someone looked. Simulation time, so a paused game
+        // records nothing rather than recording a stall.
+        float seconds = now.FloatSeconds;
+
         foreach (Entry entry in Entries.Values)
         {
             entry.Meter.Advance(now);
+            entry.History?.Advance(seconds, entry.TotalItems);
         }
     }
 
@@ -695,6 +753,14 @@ public class EfficiencyTracker : IDisposable
         if (entry.MeteredLanes.Length > 0)
         {
             entry.MaxItemsPerMinute = LookupMaxRate(localized, entry, out entry.MaxSource);
+        }
+
+        // Only the things measured against their own stated rate: a processing machine,
+        // or a port, whose ceiling is its launch rate. Both are worth a graph, and
+        // together they are a fifth of what the tracker sees.
+        if (OverlayTuning.HistoryEnabled && entry.MaxSource == "definition")
+        {
+            entry.History = new MachineHistory();
         }
 
         entry.IsOutputPort = fluidPort != null || IsOutputPortSimulation(localized.Simulation);
