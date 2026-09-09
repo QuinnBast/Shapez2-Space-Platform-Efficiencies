@@ -120,6 +120,37 @@ public class EfficiencyTracker : IDisposable
         /// than against the best rate this happens to have managed so far.</summary>
         public bool HasKnownCeiling => MaxItemsPerMinute > 0f;
 
+        /// <summary>
+        /// Whether this port is part of the factory at all.
+        ///
+        /// A platform can carry more port buildings than it uses - a bank of them built
+        /// out and only some connected - and an unused one has no business in the
+        /// platform's ceiling: twelve idle ports among thirty-six turned a platform
+        /// shipping everything it could into a platform at 69%. Anything that has moved
+        /// an item counts, and so does anything with goods waiting on it, so a port that
+        /// is merely blocked still counts against the total, which is the point of it.
+        /// </summary>
+        public bool InUse
+        {
+            get
+            {
+                if (TotalItems > 0)
+                {
+                    return true;
+                }
+
+                for (int i = 0; i < MeteredLanes.Length; i++)
+                {
+                    if (MeteredLanes[i].HasItem)
+                    {
+                        return true;
+                    }
+                }
+
+                return FluidSource != null && FluidSource.FluidContainer.Level > 0f;
+            }
+        }
+
         /// <summary>0 = dead stop, 1 = running at the best rate we know this can do.</summary>
         public float Utilization
         {
@@ -158,8 +189,14 @@ public class EfficiencyTracker : IDisposable
         /// Average utilization of everything built on the platform.
         public float Utilization;
 
-        /// Average of how backed up its machines' supply is, for the space view pip.
+        /// Whether the platform cannot ship: its ports have goods waiting and nothing
+        /// leaving. Averaging every flow's value instead - which is what this used to be -
+        /// put a pip on any platform where a few belts happened to be holding stock.
         public float Saturation;
+
+        /// Ports actually in use, and how many of those are stuck.
+        public int PortCount;
+        public int StuckPortCount;
 
         public bool IsSaturated => Saturation >= OverlayTuning.SaturationThreshold;
 
@@ -461,7 +498,12 @@ public class EfficiencyTracker : IDisposable
             .Append(summary.History == null ? 0 : summary.History.CoveredSeconds(0)).Append('s');
 
         text.Append('\n').Append("  ").Append(ports.Count).Append(" port(s), ")
-            .Append(items).Append(" item(s) since tracking began");
+            .Append(summary.PortCount).Append(" in use, ").Append(summary.StuckPortCount)
+            .Append(" stuck -> saturation ").Append(summary.Saturation.ToString("0.##"))
+            .Append(summary.IsSaturated ? " (pip shown)" : " (no pip)");
+
+        text.Append('\n').Append("  ").Append(items)
+            .Append(" item(s) through them since tracking began");
 
         for (int i = 0; i < ports.Count && i < 12; i++)
         {
@@ -472,7 +514,8 @@ public class EfficiencyTracker : IDisposable
                 .Append(" of ").Append(port.MaxItemsPerMinute.ToString("0.#"))
                 .Append(" (").Append(port.MaxSource).Append(", ")
                 .Append(port.MeteredLanes.Length).Append(" lane(s)) = ")
-                .Append((port.Utilization * 100f).ToString("0.#")).Append('%');
+                .Append((port.Utilization * 100f).ToString("0.#")).Append('%')
+                .Append(port.InUse ? "" : ", unused - not counted");
         }
 
         if (ports.Count > 12)
@@ -882,6 +925,11 @@ public class EfficiencyTracker : IDisposable
 
             for (int i = 0; i < ports.Count; i++)
             {
+                if (!ports[i].InUse)
+                {
+                    continue;
+                }
+
                 total += ports[i].TotalItems;
                 ceiling += ports[i].MaxItemsPerMinute;
             }
@@ -941,6 +989,8 @@ public class EfficiencyTracker : IDisposable
             summary.MachineCount = 0;
             summary.BlockedCount = 0;
             summary.StarvedCount = 0;
+            summary.PortCount = 0;
+            summary.StuckPortCount = 0;
         }
 
         foreach (Entry entry in Entries.Values)
@@ -961,8 +1011,14 @@ public class EfficiencyTracker : IDisposable
             if (summary.MachineCount > 0)
             {
                 summary.Utilization /= summary.MachineCount;
-                summary.Saturation /= summary.MachineCount;
             }
+
+            // A platform is holding things up when the way out is blocked, which is what
+            // its ports say. With no ports of its own - a space belt, a pipe - the flows
+            // on it are all there is to go on.
+            summary.Saturation = summary.PortCount > 0
+                ? summary.StuckPortCount / (float)summary.PortCount
+                : (summary.MachineCount > 0 ? summary.BlockedCount / (float)summary.MachineCount : 0f);
         }
     }
 
@@ -993,12 +1049,18 @@ public class EfficiencyTracker : IDisposable
             summary.BusiestItemsPerMinute = entry.ItemsPerMinute;
         }
 
-        if (entry.IsOutputPort)
+        if (entry.IsOutputPort && entry.InUse)
         {
             summary.HasPorts = true;
             summary.OutputItemsPerMinute += entry.ItemsPerMinute;
             summary.OutputCeiling += entry.MaxItemsPerMinute;
             summary.OutputSimulation = summary.OutputSimulation ?? entry.Localized;
+            summary.PortCount++;
+
+            if (entry.Saturation >= OverlayTuning.SaturationThreshold)
+            {
+                summary.StuckPortCount++;
+            }
         }
     }
 
