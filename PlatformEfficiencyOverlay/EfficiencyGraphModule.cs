@@ -32,9 +32,13 @@ public class EfficiencyGraphModule : HUDSidePanelModule
         /// Fills the buffer with fractions of capacity, oldest first, returning how many.
         public readonly Func<float[], int> Read;
 
-        public Data(Func<float[], int> read)
+        /// The rate against the ceiling, for the chart's other corner.
+        public readonly Func<string> Caption;
+
+        public Data(Func<float[], int> read, Func<string> caption)
         {
             Read = read;
+            Caption = caption;
         }
 
         public PrefabViewReference<HUDSidePanelModule> GetViewPrefabReference()
@@ -51,8 +55,10 @@ public class EfficiencyGraphModule : HUDSidePanelModule
     public RawImage[] UIBars = Array.Empty<RawImage>();
     public HUDTooltipTarget[] UITips = Array.Empty<HUDTooltipTarget>();
     public TextMeshProUGUI UISummary;
+    public TextMeshProUGUI UICaption;
 
     private Func<float[], int> Source;
+    private Func<string> Caption;
     private readonly float[] Series = new float[MachineHistory.Buckets + 1];
     private float NextRefresh;
     private bool FontResolved;
@@ -73,6 +79,7 @@ public class EfficiencyGraphModule : HUDSidePanelModule
         }
 
         Source = data.Read;
+        Caption = data.Caption;
         NextRefresh = 0f;
         Latest = this;
 
@@ -214,26 +221,50 @@ public class EfficiencyGraphModule : HUDSidePanelModule
     /// </summary>
     private void DrawSummary(float average, float peak, bool any)
     {
-        if (UISummary == null)
-        {
-            return;
-        }
-
         if (!FontResolved)
         {
             FontResolved = true;
 
+            // Borrowed from the panel around us: a mod has no font asset of its own, and a
+            // TextMeshPro label with no font draws nothing at all.
             TMP_FontAsset font = EfficiencyGraphTemplate.FindFont(transform);
 
             if (font != null)
             {
-                UISummary.font = font;
+                if (UISummary != null)
+                {
+                    UISummary.font = font;
+                }
+
+                if (UICaption != null)
+                {
+                    UICaption.font = font;
+                }
             }
         }
 
-        UISummary.text = any
-            ? "avg " + Percent(average) + "   peak " + Percent(peak)
-            : "recording...";
+        if (UISummary != null)
+        {
+            UISummary.text = any
+                ? "avg " + Percent(average) + "   peak " + Percent(peak)
+                : "recording...";
+        }
+
+        if (UICaption != null)
+        {
+            string caption = null;
+
+            try
+            {
+                caption = Caption != null ? Caption() : null;
+            }
+            catch (Exception exception)
+            {
+                Logger?.Exception?.LogException(exception);
+            }
+
+            UICaption.text = caption ?? string.Empty;
+        }
     }
 
     private static string Percent(float fraction)
@@ -399,17 +430,19 @@ internal static class EfficiencyGraphTemplate
 
         graph.UIBars = bars;
         graph.UITips = tips;
-        graph.UISummary = BuildSummary(module.transform);
+
+        // Both labels are added last so they draw over the bars rather than behind them.
+        graph.UICaption = BuildLabel(module.transform, "Caption", TextAlignmentOptions.TopLeft);
+        graph.UISummary = BuildLabel(module.transform, "Summary", TextAlignmentOptions.TopRight);
+
         Prefab = graph;
 
         return Prefab;
     }
 
-    private static TextMeshProUGUI BuildSummary(Transform parent)
+    private static TextMeshProUGUI BuildLabel(Transform parent, string name, TextAlignmentOptions alignment)
     {
-        GameObject label = new GameObject("Summary", typeof(RectTransform));
-
-        // Last child, so it draws over the bars rather than behind them.
+        GameObject label = new GameObject(name, typeof(RectTransform));
         label.transform.SetParent(parent, worldPositionStays: false);
 
         RectTransform rect = (RectTransform)label.transform;
@@ -420,7 +453,7 @@ internal static class EfficiencyGraphTemplate
         rect.offsetMax = new Vector2(-4f, 0f);
 
         TextMeshProUGUI text = label.AddComponent<TextMeshProUGUI>();
-        text.alignment = TextAlignmentOptions.TopRight;
+        text.alignment = alignment;
         text.fontSize = 13f;
         text.color = new Color(1f, 1f, 1f, 0.75f);
         text.raycastTarget = false;

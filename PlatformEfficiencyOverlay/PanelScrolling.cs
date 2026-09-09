@@ -167,6 +167,12 @@ internal static class PanelScrolling
             LayoutElement element = created.AddComponent<LayoutElement>();
             element.flexibleWidth = 1f;
 
+            // Without a visible bar there is nothing to say the panel has been cut off -
+            // it just looks like a panel that happens to end there. It hides itself when
+            // everything fits, so it costs nothing when it is not needed.
+            scroll.verticalScrollbar = BuildScrollbar(viewport);
+            scroll.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.AutoHide;
+
             logger?.Info?.Log("Side panel content is now scrollable when it overflows.");
 
             return viewport;
@@ -177,6 +183,44 @@ internal static class PanelScrolling
             logger?.Exception?.LogException(exception);
             return null;
         }
+    }
+
+    /// <summary>
+    /// A slim bar down the right edge, built from two plain quads. Its job is mostly to be
+    /// seen: a capped panel with no bar reads as a panel that simply ends there.
+    /// </summary>
+    private static Scrollbar BuildScrollbar(RectTransform viewport)
+    {
+        GameObject track = new GameObject("Scrollbar", typeof(RectTransform));
+        track.transform.SetParent(viewport, worldPositionStays: false);
+
+        RectTransform trackRect = (RectTransform)track.transform;
+        trackRect.anchorMin = new Vector2(1f, 0f);
+        trackRect.anchorMax = new Vector2(1f, 1f);
+        trackRect.pivot = new Vector2(1f, 0.5f);
+        trackRect.sizeDelta = new Vector2(5f, -4f);
+        trackRect.anchoredPosition = new Vector2(-2f, 0f);
+
+        RawImage trackImage = track.AddComponent<RawImage>();
+        trackImage.color = new Color(1f, 1f, 1f, 0.08f);
+
+        GameObject handle = new GameObject("Handle", typeof(RectTransform));
+        handle.transform.SetParent(track.transform, worldPositionStays: false);
+
+        RectTransform handleRect = (RectTransform)handle.transform;
+        handleRect.anchorMin = Vector2.zero;
+        handleRect.anchorMax = Vector2.one;
+        handleRect.sizeDelta = Vector2.zero;
+
+        RawImage handleImage = handle.AddComponent<RawImage>();
+        handleImage.color = new Color(1f, 1f, 1f, 0.45f);
+
+        Scrollbar scrollbar = track.AddComponent<Scrollbar>();
+        scrollbar.direction = Scrollbar.Direction.BottomToTop;
+        scrollbar.handleRect = handleRect;
+        scrollbar.targetGraphic = handleImage;
+
+        return scrollbar;
     }
 
     /// <summary>
@@ -192,6 +236,22 @@ internal static class PanelScrolling
         }
 
         StringBuilder text = new StringBuilder();
+
+        RectTransform container = from.parent as RectTransform;
+        RectTransform viewport = container == null ? null : container.parent as RectTransform;
+
+        if (viewport != null && viewport.name == ViewportName)
+        {
+            text.Append("scroll: content ").Append((int)container.rect.height)
+                .Append(", viewport ").Append((int)viewport.rect.height)
+                .Append(", cap ").Append((int)MaxHeight(viewport))
+                .Append('\n');
+        }
+        else
+        {
+            text.Append("scroll: not installed\n");
+        }
+
         Transform current = from;
         int depth = 0;
 

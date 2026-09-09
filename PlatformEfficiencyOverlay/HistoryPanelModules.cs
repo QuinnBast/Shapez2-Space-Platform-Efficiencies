@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using Core.Localization;
 
 /// <summary>
@@ -29,10 +29,33 @@ internal static class HistoryPanelModules
             OverlayTuning.HistoryRange,
             index => OverlayTuning.HistoryRange = index);
 
-        // Read through a delegate, so the chart follows both the live data and a change of
+        // Read through delegates, so the chart follows both the live data and a change of
         // range without the panel being rebuilt.
         yield return new EfficiencyGraphModule.Data(
-            buffer => history.Read(OverlayTuning.HistoryRange, tracker.SimulationSeconds, ceiling, buffer));
+            buffer => history.Read(OverlayTuning.HistoryRange, tracker.SimulationSeconds, ceiling, buffer),
+            () => Caption(tracker, history, ceiling));
+    }
+
+    /// <summary>
+    /// The rate against the ceiling, drawn in the chart's own corner.
+    ///
+    /// Taken from the finest bucket rather than from the game's efficiency gauge. That
+    /// gauge derives a rate from the gaps between arrivals on one lane, which is exact for
+    /// a single machine and meaningless for a platform: pointing it at a stand-in fed by
+    /// every port at once puts many arrivals in the same simulation tick, and the gaps it
+    /// divides by collapse. This is the number the overlay measured, which is also the
+    /// number the chart is drawn from, so the two cannot disagree.
+    /// </summary>
+    private static string Caption(EfficiencyTracker tracker, MachineHistory history, float ceiling)
+    {
+        float live = history.Live(0, tracker.SimulationSeconds, ceiling);
+
+        return Rate(live * ceiling) + " of " + Rate(ceiling) + " per min";
+    }
+
+    private static string Rate(float perMinute)
+    {
+        return perMinute >= 1000f ? perMinute.ToString("#,##0") : perMinute.ToString("0.#");
     }
 
     private static IText[] BuildRangeTexts()

@@ -50,7 +50,7 @@ public static class OverlayTuning
     public static bool PanelScrolling = true;
 
     /// <summary>How much of the screen height the panel's content may take up.</summary>
-    public static float PanelHeightFraction = 0.62f;
+    public static float PanelHeightFraction = 0.8f;
 
     /// <summary>
     /// Draw the measured number on each machine. Off by default: the labels are drawn by

@@ -109,34 +109,17 @@ public class PlatformPanelModules : IIslandModulesRewirer
     /// considers its capacity, and the two never disagree.
     /// </summary>
     /// <summary>
-    /// The platform's whole output as one gauge: every space belt port feeding a single
-    /// stand-in lane, measured against the sum of what those ports can carry. So the
-    /// percentage reads as "how much of what this platform could ship is it shipping".
+    /// The game's gauge, for one flow carried on one real lane.
+    ///
+    /// It derives its rate from the gaps between arrivals on the lane it is handed, so it
+    /// is exact for a single lane and unusable for anything aggregated: a stand-in fed by
+    /// several lanes puts many arrivals in the same simulation tick, and the gaps it
+    /// divides by collapse to nothing. So anything with more than one lane now gets the
+    /// chart's own measured figures, and this is offered only where it is right.
     /// </summary>
-    private IHUDSidePanelModuleData BuildOutputGauge(EfficiencyTracker.IslandSummary summary)
-    {
-        if (Speeds == null || summary.OutputCeiling <= 0f || summary.OutputSimulation == null)
-        {
-            return null;
-        }
-
-        float speedFactor = Speeds.GetSpeedValue(BeltSpeedId) / 100f;
-        if (speedFactor <= 0f)
-        {
-            return null;
-        }
-
-        return new HUDSidePanelModuleBuildingEfficiency.Data(
-            default(BuildingModel),
-            summary.OutputSimulation,
-            summary.OutputAggregate,
-            BeltSpeedId,
-            60f / summary.OutputCeiling * speedFactor);
-    }
-
     private IHUDSidePanelModuleData BuildGauge(EfficiencyTracker.Entry entry)
     {
-        if (entry == null || Speeds == null || !entry.HasKnownCeiling || entry.MeteredLanes.Length == 0)
+        if (entry == null || Speeds == null || !entry.HasKnownCeiling || entry.MeteredLanes.Length != 1)
         {
             return null;
         }
@@ -147,18 +130,13 @@ public class PlatformPanelModules : IIslandModulesRewirer
             return null;
         }
 
-        // Where several lanes run in parallel, the gauge is pointed at a stand-in that
-        // reports all of them, so it measures the whole flow against the whole ceiling.
-        // A single lane is handed over directly - the real lane carries the exact
-        // sub-tick arrival time, which is slightly better data.
-        IItemLane target = entry.MeteredLanes.Length > 1
-            ? entry.EnsureAggregate()
-            : entry.MeteredLanes[0];
-
+        // The module works out its own 100% mark as baseDuration / (speedValue / 100), so
+        // handing it the ceiling we measured multiplied by that same factor makes the two
+        // cancel: it then reads full at the rate this overlay calls capacity.
         return new HUDSidePanelModuleBuildingEfficiency.Data(
             default(BuildingModel),
             entry.Localized,
-            target,
+            entry.MeteredLanes[0],
             BeltSpeedId,
             60f / entry.MaxItemsPerMinute * speedFactor);
     }
@@ -196,16 +174,17 @@ public class PlatformPanelModules : IIslandModulesRewirer
                 yield break;
             }
 
-            // Exactly one gauge. A platform can have a dozen output ports and the side
-            // panel does not scroll, so every port reports into one flow: what the
-            // platform is actually shipping against everything it could ship.
-            IHUDSidePanelModuleData gauge = summary.HasPorts
-                ? Owner.BuildOutputGauge(summary)
-                : Owner.BuildGauge(Owner.Tracker.FindBusiest(island.Id));
-
-            if (gauge != null)
+            // No gauge for a platform that has ports: its total comes from all of them at
+            // once, which is the one case the game's gauge cannot measure. The chart's own
+            // caption carries the rate instead.
+            if (!summary.HasPorts)
             {
-                yield return gauge;
+                IHUDSidePanelModuleData gauge = Owner.BuildGauge(Owner.Tracker.FindBusiest(island.Id));
+
+                if (gauge != null)
+                {
+                    yield return gauge;
+                }
             }
 
             foreach (IHUDSidePanelModuleData module in HistoryPanelModules.For(
