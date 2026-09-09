@@ -77,8 +77,8 @@ internal static class HistoryPanelModules
         }
 
         yield return EfficiencyGraphModule.Data.Readout(
-            () => Rate(Measured(tracker, entry)) + " of " + Rate(entry.MaxItemsPerMinute) + " per min",
-            () => Measured(tracker, entry) / entry.MaxItemsPerMinute);
+            () => Rate(Measured(tracker, entry)) + " of " + Rate(entry.Ceiling) + " per min",
+            () => Measured(tracker, entry) / entry.Ceiling);
     }
 
     private static float Measured(EfficiencyTracker tracker, EfficiencyTracker.Entry entry)

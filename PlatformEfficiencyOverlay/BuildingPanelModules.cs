@@ -76,7 +76,7 @@ public class BuildingPanelModules : IBuildingModulesRewirer
             }
 
             foreach (IHUDSidePanelModuleData module in
-                HistoryPanelModules.For(Tracker, entry.History, entry.MaxItemsPerMinute))
+                HistoryPanelModules.For(Tracker, entry.History, entry.Ceiling))
             {
                 yield return module;
             }

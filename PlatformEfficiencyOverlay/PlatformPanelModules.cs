@@ -144,7 +144,7 @@ public class PlatformPanelModules : IIslandModulesRewirer
             entry.Localized,
             target,
             BeltSpeedId,
-            60f / entry.MaxItemsPerMinute * speedFactor);
+            60f / entry.Ceiling * speedFactor);
     }
 
     private sealed class Provider : IIslandModuleDataProvider

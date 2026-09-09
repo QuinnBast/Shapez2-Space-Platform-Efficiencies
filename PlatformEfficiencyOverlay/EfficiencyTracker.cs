@@ -128,6 +128,27 @@ public class EfficiencyTracker : IDisposable
         public bool HasKnownCeiling => MaxItemsPerMinute > 0f;
 
         /// <summary>
+        /// What to divide by: the stated ceiling, or the best this has actually managed
+        /// when that is higher.
+        ///
+        /// A computed ceiling can be a little low and stay low - belts compress items
+        /// closer than their nominal spacing, so a belt really does carry more than
+        /// spacing arithmetic allows, and a platform summed from such ports reported 111%
+        /// of itself. Anything a flow has demonstrably done is within its capacity by
+        /// definition, so the best observed rate raises the bar rather than overflowing
+        /// it. The margin keeps ordinary jitter from ratcheting it upwards.
+        /// </summary>
+        public float Ceiling
+        {
+            get
+            {
+                return PeakItemsPerMinute > MaxItemsPerMinute * 1.02f
+                    ? PeakItemsPerMinute
+                    : MaxItemsPerMinute;
+            }
+        }
+
+        /// <summary>
         /// Whether this port is part of the factory at all.
         ///
         /// A platform can carry more port buildings than it uses - a bank of them built
@@ -169,7 +190,7 @@ public class EfficiencyTracker : IDisposable
         {
             get
             {
-                float reference = MaxItemsPerMinute > 0f ? MaxItemsPerMinute : PeakItemsPerMinute;
+                float reference = Ceiling;
                 if (reference <= 0f)
                 {
                     return 0f;
@@ -497,7 +518,7 @@ public class EfficiencyTracker : IDisposable
         {
             items += ports[i].TotalItems;
             rate += ports[i].ItemsPerMinute;
-            ceiling += ports[i].MaxItemsPerMinute;
+            ceiling += ports[i].Ceiling;
         }
 
         // The platform's figure, counted rather than averaged: every item that actually
@@ -554,7 +575,7 @@ public class EfficiencyTracker : IDisposable
 
             text.Append('\n').Append("    ").Append(port.Localized.Simulation.GetType().Name)
                 .Append(": ").Append(port.ItemsPerMinute.ToString("0.#"))
-                .Append(" of ").Append(port.MaxItemsPerMinute.ToString("0.#"))
+                .Append(" of ").Append(port.Ceiling.ToString("0.#"))
                 .Append(" (").Append(port.MaxSource).Append(", ")
                 .Append(port.MeteredLanes.Length).Append(" lane(s)) = ")
                 .Append((port.Utilization * 100f).ToString("0.#")).Append('%')
@@ -592,8 +613,9 @@ public class EfficiencyTracker : IDisposable
 
         text.Append(entry.Localized.Simulation.GetType().Name)
             .Append(": measured ").Append(entry.ItemsPerMinute.ToString("0.##")).Append("/min")
-            .Append(", ceiling ").Append(entry.MaxItemsPerMinute.ToString("0.##"))
+            .Append(", ceiling ").Append(entry.Ceiling.ToString("0.##"))
             .Append(" from ").Append(entry.MaxSource)
+            .Append(entry.Ceiling > entry.MaxItemsPerMinute ? " (raised to best seen)" : "")
             .Append(" -> ").Append((entry.Utilization * 100f).ToString("0.#")).Append('%');
 
         text.Append('\n').Append("  research speed ")
@@ -945,7 +967,7 @@ public class EfficiencyTracker : IDisposable
         foreach (Entry entry in Entries.Values)
         {
             entry.Meter.Advance(now);
-            entry.History?.Advance(seconds, entry.TotalItems, entry.MaxItemsPerMinute);
+            entry.History?.Advance(seconds, entry.TotalItems, entry.Ceiling);
 
             // Only ever a handful: an aggregate exists once a panel has asked for a gauge
             // over one, and it stops driving as soon as that panel closes.
@@ -984,7 +1006,7 @@ public class EfficiencyTracker : IDisposable
                 }
 
                 total += ports[i].TotalItems;
-                ceiling += ports[i].MaxItemsPerMinute;
+                ceiling += ports[i].Ceiling;
             }
 
             if (ceiling <= 0f)
@@ -1106,7 +1128,7 @@ public class EfficiencyTracker : IDisposable
         {
             summary.HasPorts = true;
             summary.OutputItemsPerMinute += entry.ItemsPerMinute;
-            summary.OutputCeiling += entry.MaxItemsPerMinute;
+            summary.OutputCeiling += entry.Ceiling;
             summary.OutputSimulation = summary.OutputSimulation ?? entry.Localized;
             summary.PortCount++;
 
@@ -1225,20 +1247,26 @@ public class EfficiencyTracker : IDisposable
         // simulation, which is the one event worth counting.
         FluidPackageLaunchSimulation launcher = null;
         IFluidContainer container = null;
+        ConsumingFluidContainer intake = null;
         Ticks launchDuration = Ticks.Zero;
+        FluidUnit packageSize = FluidUnit.Zero;
 
         switch (localized.Simulation)
         {
             case SpaceFluidPortSenderSimulation space:
                 launcher = space.LaunchSimulation;
                 container = space.FluidContainer;
+                intake = space.FluidContainer;
                 launchDuration = space.LaunchDuration_T;
+                packageSize = space.PackagingSize;
                 break;
 
             case FluidPortTransferSimulation docked:
                 launcher = docked.LaunchSimulation;
                 container = docked.FluidPortSender;
+                intake = docked.FluidPortSender;
                 launchDuration = docked.LaunchDuration_T;
+                packageSize = docked.PackagingSize;
                 break;
         }
 
@@ -1277,11 +1305,7 @@ public class EfficiencyTracker : IDisposable
         if (launcher != null)
         {
             entry.FluidSource = container;
-
-            // One package per launch duration is all a port can manage.
-            float launchSeconds = launchDuration.FloatSeconds;
-            entry.MaxItemsPerMinute = launchSeconds > 0f ? 60f / launchSeconds : 0f;
-            entry.MaxSource = "launch-rate";
+            entry.MaxItemsPerMinute = FluidRateFor(intake, packageSize, launchDuration, out entry.MaxSource);
             FluidPorts[launcher] = entry;
         }
 
@@ -1449,6 +1473,38 @@ public class EfficiencyTracker : IDisposable
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Packages per minute a fluid port can send.
+    ///
+    /// Its launcher can start one package every launch duration, which is the number this
+    /// used to report - and it is almost never the constraint. A package is a fixed volume,
+    /// so the port cannot send them faster than fluid arrives to fill them, and the
+    /// container states exactly how fast that is: its consuming rate, which is the pipe's
+    /// throughput. Ninety a minute against an eighteen-a-minute supply is how a fluid port
+    /// passing everything it was given came to read 20%.
+    /// </summary>
+    private static float FluidRateFor(ConsumingFluidContainer intake, FluidUnit packageSize,
+        Ticks launchDuration, out string source)
+    {
+        float launchSeconds = launchDuration.FloatSeconds;
+        float fromLauncher = launchSeconds > 0f ? 60f / launchSeconds : 0f;
+
+        float litresPerMinute = intake == null
+            ? 0f
+            : intake.Config.ConsumingRate.LitersPerSecondApprox * 60f;
+        float litresPerPackage = packageSize.LitersApprox;
+        float fromSupply = litresPerPackage > 0f ? litresPerMinute / litresPerPackage : 0f;
+
+        if (fromSupply > 0f && (fromLauncher <= 0f || fromSupply < fromLauncher))
+        {
+            source = "fluid-supply";
+            return fromSupply;
+        }
+
+        source = "launch-rate";
+        return fromLauncher;
     }
 
     /// <summary>

@@ -405,7 +405,7 @@ public class TuningCommands : IConsoleRewirer
                 continue;
             }
 
-            int count = entry.History.Read(range, entry.MaxItemsPerMinute, series);
+            int count = entry.History.Read(range, entry.Ceiling, series);
             float peak = 0f;
             float total = 0f;
 
@@ -554,7 +554,7 @@ public class TuningCommands : IConsoleRewirer
         }
 
         string ceiling = entry.HasKnownCeiling
-            ? entry.MaxItemsPerMinute.ToString("0.0") + "/min from " + entry.MaxSource
+            ? entry.Ceiling.ToString("0.0") + "/min from " + entry.MaxSource
             : "unknown, comparing against best seen " + entry.PeakItemsPerMinute.ToString("0.0") + "/min";
 
         return name + ": measured " + entry.ItemsPerMinute.ToString("0.0") + "/min"
