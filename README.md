@@ -1,6 +1,6 @@
 > [!IMPORTANT]
 > **This repository has moved.** Platform Efficiency Viewer now lives alongside my other
-> shapez 2 mods in <https://github.com/QuinnBast/Shapez-2-api-helper-docs>, under
+> shapez 2 mods in <https://github.com/QuinnBast/Shapez2-Mods>, under
 > `Shapez2-Space-Platform-Efficiencies/`. Its full history came with it.
 >
 > This repository is archived and no longer accepts changes.
