@@ -1,3 +1,10 @@
+> [!IMPORTANT]
+> **This repository has moved.** Platform Efficiency Viewer now lives alongside my other
+> shapez 2 mods in <https://github.com/QuinnBast/Shapez-2-api-helper-docs>, under
+> `Shapez2-Space-Platform-Efficiencies/`. Its full history came with it.
+>
+> This repository is archived and no longer accepts changes.
+
 # Platform Efficiency Viewer
 
 See what your factory is actually moving, and where it is stuck — no belt readers required.
